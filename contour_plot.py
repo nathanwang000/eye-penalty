@@ -39,7 +39,18 @@ def ZOWL(w1, w2):
     return w1 * np.where(abs(X)>abs(Y), abs(X), abs(Y)) +\
         w2 * np.where(abs(X)<=abs(Y), abs(X), abs(Y))
 
-levels = [10]
+def Zeye(X, Y):
+    def solveQuadratic(a, b, c):
+        return (-b + np.sqrt(b**2-4*c*a)) / (2*a)
+    if l1_ratio == 0 or l1_ratio == 1:
+        return Zpenalty
+    b = l1_ratio * abs(Y)
+    a = 0.5 * (1-l1_ratio) * X**2
+    c = alpha * l1_ratio**2 / (1-l1_ratio)
+    return 1 / solveQuadratic(a, b, -c)
+
+levels = [1,2,3,4,5,6,7,8,9,10]
+drawContour(Zeye(X, Y), "eye", levels)
 # drawContour(Zlasso, "lasso", levels)
 # drawContour(Zridge, "ridge", levels)
 # drawContour(Zenet, 'enet', levels)

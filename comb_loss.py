@@ -1,5 +1,6 @@
 import numpy as np
 from numpy import array
+from math import sqrt
 import matplotlib.pyplot as plt
 from chainer import cuda, Function, gradient_check, Variable
 from chainer import datasets, iterators, optimizers, serializers
@@ -26,6 +27,24 @@ def l2normsq(v):
     return F.sum(v**2)
 
 ############ penalties ##########################
+def eye(r, alpha=1, l1_ratio=0.5):
+    def solveQuadratic(a, b, c):
+        return (-b + sqrt(b**2-4*a*c)) / (2*a)
+
+    # want to force f_(theta/t) = c for which c
+    # 45 degree, which is slope of -1, where f_ is penalty
+    # solve for t, just a quadratic equation!
+    # and in fact t always real because c > 0
+    def f_(theta):
+        if l1_ratio == 0 or l1_ratio == 1:
+            return penalty(r, alpha, l1_ratio)(theta)
+        b = l1_ratio * l1norm((1-r)*theta)
+        a = 0.5 * (1-l1_ratio) * l2normsq(r*theta)
+        c = alpha * l1_ratio**2 / (1-l1_ratio)
+        # a (1/t)**2 + b (1/t) = c
+        return 1 / solveQuadratic(a, b, -c)
+    return f_
+
 def penalty(r, alpha=1, l1_ratio=0.5):
     def f_(theta):
         return 2 * alpha * (l1_ratio * l1norm((1-r)*theta) +
@@ -82,12 +101,12 @@ def gendata(plot=False, name=None):
     y = (X[:,0] > mu).reshape(n,1).astype(np.float32)
     if plot:
         plt.plot(X[:,0], X[:,1], 'o')
+        plt.axvline(x=mu, color='k', linestyle='--')
         plt.title("generated dataset, $x_1$ = 2*$x_0$")
         name = name or 'data'
         plt.savefig('figures/'+name+'.png', bbox_inches='tight')
         plt.clf()
     return X, y
-
 
 #############the model#########################
 class Predictor(Chain):
@@ -183,19 +202,19 @@ def paramsSearch():
         # penalyze 'b'
         # 'owl': (OWL, ([2,1,1], [1,1,1], [1,0,1]),
         #         (1, 0.1, 0.01, 0.001, 0.0001)),
-        'lasso': (lasso, (1, 0.1, 0.01, 0.001, 0.0001)),
-        'ridge': (ridge, (1, 0.1, 0.01, 0.001, 0.0001)),
-        'enet': (enet, (1, 0.1, 0.01, 0.001, 0.0001),
+        'lasso': (lasso, (0.1, 0.01, 0.001, 0.0001)),
+        'ridge': (ridge, (0.1, 0.01, 0.001, 0.0001)),
+        'enet': (enet, (0.1, 0.01, 0.001, 0.0001),
                  tuple(i/10 for i in range(11))),
-        'penalty': (penalty, (r,), (1, 0.1, 0.01, 0.001, 0.0001),
+        'penalty': (penalty, (r,), (0.1, 0.01, 0.001, 0.0001),
                     tuple(i/10 for i in range(11))),
         'wlasso': (weightedLasso, (w0, w1),
-                   (1, 0.1, 0.01, 0.001, 0.0001)),
+                   (0.1, 0.01, 0.001, 0.0001)),
         'wridge': (weightedRidge, (w0, w1),
-                   (1, 0.1, 0.01, 0.001, 0.0001)),
+                   (0.1, 0.01, 0.001, 0.0001)),
         # don't penalyze 'b'
         'owl': (OWL, ([2,1], [1,1], [1,0]),
-                (1, 0.1, 0.01, 0.001, 0.0001))
+                (0.1, 0.01, 0.001, 0.0001))
     }
 
     for method in params_cand:
@@ -239,4 +258,4 @@ def experiment():
     run_with_reg(penalty(array([ 1.,  0.]), 0.001, 0.6), "result_penalty")
     run_with_reg(weightedLasso(array([ 1.,  2.]), 0.001), "result_wlasso")
     run_with_reg(weightedRidge(array([ 1.,  2.]), 0.001), "result_wridge")        
-experiment()
+

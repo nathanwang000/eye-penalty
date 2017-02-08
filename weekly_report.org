@@ -1,0 +1,159 @@
+#+TITLE: Incorporating known risk factors into models
+#+DATE: <2017-02-07 Tue>
+#+AUTHOR: Jiaxuan Wang
+#+EMAIL: jiaxuan@umich
+#+OPTIONS: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline author:t c:nil
+#+OPTIONS: creator:comment d:(not "LOGBOOK") date:t e:t email:nil f:t inline:t
+#+OPTIONS: num:t p:nil pri:nil stat:t tags:t tasks:t tex:t timestamp:t toc:nil
+#+OPTIONS: todo:t |:t
+#+CREATOR: Emacs 24.5.1 (Org mode 8.2.10)
+#+DESCRIPTION:
+#+EXCLUDE_TAGS: noexport
+#+KEYWORDS:
+#+LANGUAGE: en
+#+SELECT_TAGS: export
+
+* objective
+Incorporating known risk factors with unknown risk factors in predicting outcome. 
+In the case of choosing between correlated variables, the model should favor
+known risk factors.
+
+* approaches taken
+
+** old approach 
+
+0.5 * \lambda_2 ||r * \theta||_2^2 + \lambda_1 ||(1-r) * \theta||_1
+where r \in \{0,1\}^d, \theta \in R^d
+
+[[./contour/penalty.png]]
+
+** new approach
+
+fix a convex body that have property of the previous contour plot such that the
+angle at the end point is 45 degree. The following is the contour plot of its
+induced norm
+
+[[./contour/eye.png]]
+
+* experiments
+** set up
+Data n=100:
+
+[[./figures/data.png]]
+
+x_0 ~ N(-0.5, 0.5)
+
+x_1 = 2 * x_0
+
+Loss function is the negative loss likelihood of the logistic regression model.
+
+Optimizer: AdaDelta
+
+Number of Epoch: 1000
+
+Regulizers: elastic net, lasso, ridge, OWL, weighted lasso, weighted ridge, our penalty
+
+*** elastic net
+\alpha * (c * ||\theta||_1 + 0.5 * (1 - c) * ||\theta||_2^2) where c is a scaler
+
+[[./contour/enet_add.png]] 
+
+*** lasso
+\alpha * ||\theta||_1
+
+[[./contour/lasso_add.png]]
+
+*** ridge
+0.5 * \alpha * ||\theta||_2^2
+
+[[./contour/ridge_add.png]]
+
+*** OWL
+\alpha * \sum_{i=1}^n w_i |x|_{[i]} where w \in K_{m+} (monotone nonnegative cone)
+
+[[./contour/OWL w1=2 > w2=1.png]]
+
+degenerated case: back to lasso
+
+[[./contour/OWL w1=1 = w2=1.png]]
+
+degenerated case: back to l_{\inf}
+
+[[./contour/OWL w1=2 > w2=0.png]]
+
+some properties:
+
+generalization of OSCAR norm
+
+symmetry with respect to signed permutations
+
+in the regular case, the minimal atomic set for this norm is known (the corners
+are easily calculated)
+
+*** weighted lasso
+\alpha * ||w * \theta||_1 where w \in R_+^d
+
+[[./contour/wlasso_add.png]]
+
+*** weighted ridge 
+0.5 * \alpha * ||w * \theta||_2^2 where w \in R_{+}^{d}
+
+[[./contour/wridge_add.png]]
+
+*** our penalty
+\alpha * (0.5 * (1-c) * ||r * \theta||_2^2 + c * ||(1-r) * \theta||_1)
+where r \in \{0,1\}^d, \theta \in R^d, \alpha \in R, c \in R
+
+[[./contour/penalty_add.png]]
+
+
+
+
+
+
+
+** running procedure
+
+*** first run
+b regularized
+
+fix hyperparmeters to predefined value
+
+repeat the following 100 times:
+
+generate data, run the selected regularizers, record \theta
+
+[[./old_figures/$x_0$ distribution.png]]
+
+[[./old_figures/$x_1$ distribution.png]]
+
+[[./old_figures/b distribution.png]]
+
+[[./old_figures/avg_reg.png]]
+
+*** second run
+b unregularized
+
+generate two datasets, one for training, one for validation
+
+parameter search over the different hyperparams of the regularizers
+
+for each regularizer, use the hyperparmeters that acheives the minimal loss
+
+repeat the following 100 times:
+
+generate data, run the selected regularizers, record \theta
+
+[[./figures/$x_0$ distribution.png]]
+
+[[./figures/$x_1$ distribution.png]]
+
+[[./figures/b distribution.png]]
+
+[[./figures/avg_reg.png]]
+
+
+
+
+
+
