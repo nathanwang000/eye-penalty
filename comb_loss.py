@@ -12,12 +12,12 @@ from chainer.datasets import TupleDataset
 import os
 from itertools import product
 from convergeTrigger import ConvergeTrigger
+from sklearn.metrics import roc_auc_score, roc_curve
 
-## todo:
-## 1. change trigger to convergent (not practical) (done)
-## 2. create validation set and use that to set hyper params (done)
-## 3. add in ordered weighted lasso (done)
-## 4. how to compare relative size??
+# todo
+# 3. weighted r (draw a graph first)
+# 4. introduce noice 
+# 5. consider higher dimension 
 
 ############ utility functions ##################
 def l1norm(v):
@@ -26,26 +26,57 @@ def l1norm(v):
 def l2normsq(v):
     return F.sum(v**2)
 
+def normalizer(mu=2, std=2):
+    currsum = 0
+    n = 0
+    currx2 = 0
+
+    def transform(X):
+        mean = currsum / n
+        var  = currx2 / n - mean**2
+        return (X-mean) / np.sqrt(var) * std + mu
+
+    def normalize(X, train=True, refit=True):
+        nonlocal n, currsum, currx2        
+        # X is design matrix
+        if not train:
+            assert n!=0, "not fitted yet"
+            return transform(X)
+        if refit:
+            n = 0
+            currsum = 0
+            currx2 = 0
+        currsum += np.sum(X, 0)
+        currx2  += np.sum(X**2, 0)
+        n += X.shape[0]
+        return transform(X)
+    return normalize
+
 ############ penalties ##########################
 def eye(r, alpha=1, l1_ratio=0.5):
+    if l1_ratio == 0 or l1_ratio == 1:
+        return penalty(r, alpha, l1_ratio)
+    
     def solveQuadratic(a, b, c):
-        return (-b + sqrt(b**2-4*a*c)) / (2*a)
+        return (-b + F.sqrt(b**2-4*a*c)) / (2*a)
 
     # want to force f_(theta/t) = c for which c
     # 45 degree, which is slope of -1, where f_ is penalty
     # solve for t, just a quadratic equation!
     # and in fact t always real because c > 0
     def f_(theta):
-        if l1_ratio == 0 or l1_ratio == 1:
-            return penalty(r, alpha, l1_ratio)(theta)
-        b = l1_ratio * l1norm((1-r)*theta)
-        a = 0.5 * (1-l1_ratio) * l2normsq(r*theta)
-        c = alpha * l1_ratio**2 / (1-l1_ratio)
         # a (1/t)**2 + b (1/t) = c
-        return 1 / solveQuadratic(a, b, -c)
+        a = (1-l1_ratio) * l2normsq(r*theta)        
+        b = 2 * l1_ratio * l1norm((1-r)*theta)
+        c = l1_ratio**2 / (1-l1_ratio)
+        # degenerative case: b (1/t) = c
+        if a.data == 0: return alpha * b / c
+        # general case
+        return alpha * 1.0 / solveQuadratic(a, b, -c)
     return f_
 
 def penalty(r, alpha=1, l1_ratio=0.5):
+    # deprecated
     def f_(theta):
         return 2 * alpha * (l1_ratio * l1norm((1-r)*theta) +
                             0.5 * (1-l1_ratio) * l2normsq(r*theta))
@@ -68,7 +99,6 @@ def OWL(w, alpha=1):
         return alpha * F.sum(F.permutate(abs(theta), order) * w)
     return f_
 
-# using http://scikit-learn.org/stable/modules/linear_model.html
 def lasso(alpha=1):
     def f_(theta):
         return alpha * l1norm(theta)
@@ -87,6 +117,7 @@ def enet(alpha=1, l1_ratio=0.5):
 
 #############synthetic data##################
 # fake 2d data perfectly correlated
+niterations = 1000
 n = 100
 d = 2
 mu = -0.5
@@ -143,17 +174,28 @@ class Regresser(Chain):
             theta = F.flatten(W) # don't regularize b
             regloss = self.regularizer(theta)
         acc = (n-np.sum(abs((y.data > 0.5) - t.data))) / n
+        y_true = t.data if isinstance(t, Variable) else t
+        try: # y may be nan if predictor.W is nan
+            auroc = roc_auc_score(y_true, y.data)
+            fpr, tpr, threshold = roc_curve(y_true, y.data)
+        except:
+            auroc = -1
         report({'loss': loss,
                 'penalty': regloss,
-                'accuracy': acc}, self)
+                'accuracy': acc,
+                'auroc': auroc}, self)
         return loss + regloss
 
 ############ run #############################
-def run_with_reg(reg, outdir, num_runs=100):
+def run_with_reg(reg, outdir="tmp", num_runs=1):
     thetas = []
     # define model
     for i in range(num_runs):
-        X, y = gendata()        
+        X, y = gendata()
+        # preprocess
+        normalize = normalizer()
+        X = normalize(X)
+        
         model = Regresser(Predictor(1),
                           lossfun=lossfun,
                           regularizer=reg)
@@ -164,11 +206,10 @@ def run_with_reg(reg, outdir, num_runs=100):
                                           batch_size=n,
                                           shuffle=False)
         updater = training.StandardUpdater(train_iter, optimizer)
-        trainer = training.Trainer(updater, (1000, 'epoch'),
+        trainer = training.Trainer(updater, (niterations, 'epoch'),
                                    out=outdir)
-        # trainer = training.Trainer(updater, ConvergeTrigger(),
-        #                            out=outdir) 
         trainer.extend(extensions.LogReport(log_name="log_"+str(i)))
+        # trainer.extend(extensions.PrintReport(['epoch', 'main/accuracy', 'main/penalty', 'main/loss']))       
         trainer.run()
         # save model
         W = model.predictor.l1.W
@@ -192,16 +233,16 @@ w0 = 1 - r # don't penalize known
 w1 = w0 + 1 # penalize unknown more
 
 ################# parameter search ###########
-
 def paramsSearch():
     Xtrain, ytrain = gendata(True, 'train')
     Xval, yval = gendata(True, 'val')
+    # preprocess
+    normalize = normalizer()
+    Xtrain = normalize(Xtrain)
+    Xval = normalize(Xval, train=False)    
     # train model and choose parameter based on performance on
     # validation data
     params_cand = {
-        # penalyze 'b'
-        # 'owl': (OWL, ([2,1,1], [1,1,1], [1,0,1]),
-        #         (1, 0.1, 0.01, 0.001, 0.0001)),
         'lasso': (lasso, (0.1, 0.01, 0.001, 0.0001)),
         'ridge': (ridge, (0.1, 0.01, 0.001, 0.0001)),
         'enet': (enet, (0.1, 0.01, 0.001, 0.0001),
@@ -212,9 +253,10 @@ def paramsSearch():
                    (0.1, 0.01, 0.001, 0.0001)),
         'wridge': (weightedRidge, (w0, w1),
                    (0.1, 0.01, 0.001, 0.0001)),
-        # don't penalyze 'b'
         'owl': (OWL, ([2,1], [1,1], [1,0]),
-                (0.1, 0.01, 0.001, 0.0001))
+                (0.1, 0.01, 0.001, 0.0001)),
+        'eye': (eye, (r,), (0.1, 0.01, 0.001, 0.0001),
+                tuple(i/10 for i in range(1,10)))
     }
 
     for method in params_cand:
@@ -236,26 +278,37 @@ def paramsSearch():
                           shuffle=False)
             updater = training.StandardUpdater(train_iter,
                                                optimizer)
-            trainer = training.Trainer(updater, (1000, 'epoch'),
+            trainer = training.Trainer(updater, (niterations,
+                                                 'epoch'),
                                        out=outdir)
 
             # validate
             test_iter = iterators.SerialIterator\
                         (TupleDataset(Xval,yval),
-                         batch_size=100,
+                         batch_size=n,
                          repeat=False,
                          shuffle=False)
             trainer.extend(extensions.Evaluator(test_iter, model))
             trainer.extend(extensions.LogReport(log_name="log"))
             trainer.run()
-            
+
 ############ set up regularizers #############
-def experiment():
-    run_with_reg(OWL([1, 0], 0.01), "result_owl")
-    run_with_reg(ridge(0.01), "result_ridge")
-    run_with_reg(lasso(0.0001), "result_lasso")
-    run_with_reg(enet(0.0001, 1.0), "result_enet")
-    run_with_reg(penalty(array([ 1.,  0.]), 0.001, 0.6), "result_penalty")
-    run_with_reg(weightedLasso(array([ 1.,  2.]), 0.001), "result_wlasso")
-    run_with_reg(weightedRidge(array([ 1.,  2.]), 0.001), "result_wridge")        
+def experiment(num_runs=100):
+    def helper(num_runs):
+        def _f(*args,**kwargs):
+            return run_with_reg(*args, **kwargs, num_runs=num_runs)
+        return _f
+    run = helper(num_runs)
+    # actual run
+    run(enet(0.01, 0.6), "result_enet")
+    run(eye(array([ 1.,  0.]), 0.01, 0.3), "result_eye")
+    run(lasso(0.001), "result_lasso")
+    run(OWL([1, 0], 0.01), "result_owl")
+    run(ridge(0.001), "result_ridge")
+    run(weightedLasso(array([ 1.,  2.]), 0.01),
+                 "result_wlasso")
+    run(weightedRidge(array([ 1.,  2.]), 0.01),
+                 "result_wridge")
+    run(penalty(array([ 1.,  0.]), 0.0001, 0.8),
+                 "result_penalty")
 

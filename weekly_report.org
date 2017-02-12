@@ -115,6 +115,7 @@ where r \in \{0,1\}^d, \theta \in R^d, \alpha \in R, c \in R
 ** running procedure
 
 *** first run
+
 b regularized
 
 fix hyperparmeters to predefined value
@@ -132,6 +133,7 @@ generate data, run the selected regularizers, record \theta
 [[./old_figures/avg_reg.png]]
 
 *** second run
+
 b unregularized
 
 generate two datasets, one for training, one for validation
@@ -152,8 +154,24 @@ generate data, run the selected regularizers, record \theta
 
 [[./figures/avg_reg.png]]
 
+*** third run
 
+b unregularized
 
+generate two datasets, one for training, one for validation
 
+normalize the data to zero mean and unit variance (validaton data is normalized
+using mean and variance for the training data)
+
+parameter search over the different hyperparams of the regularizers
+
+for each regularizer, use the hyperparmeters that acheives the minimal loss
+
+repeat the following 100 times:
+
+generate data, normalize data, run the selected regularizers, record \theta
+
+The choosing criteria is still loss b/c AUROC is always going to be 1 in the
+deterministic case:
 
 

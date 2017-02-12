@@ -4,10 +4,11 @@ import json
 import matplotlib.pyplot as plt
 from os import listdir, path
 import collections
+import math
 
 dirname = 'val'
-regs = ['lasso', 'ridge', 'enet',
-        'penalty', 'wlasso', 'wridge', 'owl']
+regs = ['lasso', 'ridge', 'enet', 'penalty',
+        'wlasso', 'wridge', 'owl', 'eye']
 
 
 def extract(record):
@@ -54,23 +55,37 @@ def genplots():
         plotResult(path.join(dirname, fn, 'log'), fn)
 
 
-def returnBest():
-    D = dict([(r, None)for r in regs])
+def returnBest(methods=regs, criteria='validation/main/loss',
+               minimize = True,
+               report=['validation/main/loss',
+                       'validation/main/accuracy']):
+    if type(methods) is str: methods = [methods]
+    if criteria in report:
+        index = report.index(criteria)
+        report = report[:index] + report[index+1:]
+    D = {}
     for fn in listdir(dirname):
         if not path.isdir(path.join(dirname, fn)) or\
            fn.startswith("montage"): continue
         param_index = fn.find('(')
         method = fn[:param_index]
+        if method not in methods: continue
         args = eval(fn[param_index:])
         record = json.load(open(path.join(dirname, fn, 'log')))
         extractRecord = extract(record)
-        valloss = extractRecord('validation/main/loss')
-        valacc = extractRecord('validation/main/accuracy')        
-        if D[method] is None:
-            D[method] = (args, valloss[-1], valacc[-1])
+        key = extractRecord(criteria)
+        print(args, key[-1], *[extractRecord(r)[-1]\
+                               for r in report])
+        if (math.isnan(key[-1]) or math.isinf(key[-1])): continue
+        if D.get(method) is None:
+            D[method] = (args, key[-1], *[extractRecord(r)[-1]
+                                          for r in report])
         else:
-            if D[method][1] > valloss[-1]:
-                D[method] = (args, valloss[-1], valacc[-1])
+            if (minimize and D[method][1] > key[-1]) or\
+               (not minimize and D[method][1] < key[-1]):
+                D[method] = (args, key[-1],
+                             *[extractRecord(r)[-1]
+                               for r in report])
     return D
 
-print(returnBest())
+
