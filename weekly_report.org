@@ -1,5 +1,5 @@
 #+TITLE: Incorporating known risk factors into models
-#+DATE: <2017-02-07 Tue>
+#+DATE: <2017-02-14 Tue>
 #+AUTHOR: Jiaxuan Wang
 #+EMAIL: jiaxuan@umich
 #+OPTIONS: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline author:t c:nil
@@ -29,11 +29,21 @@ where r \in \{0,1\}^d, \theta \in R^d
 
 ** new approach
 
-fix a convex body that have property of the previous contour plot such that the
+Fix a convex body that have property of the previous contour plot such that the
 angle at the end point is 45 degree. The following is the contour plot of its
 induced norm
 
 [[./contour/eye.png]]
+
+In fact, by relaxing the constraint of r over binary to float, we can recover
+enet (setting r=0.5 * 1). Even without extending r, we can recover ridge (r=1) 
+and lasso (r=0)
+
+[[./contour/eye_enet.png]]
+
+[[./contour/eye_ridge.png]]
+
+[[./contour/eye_lasso.png]]
 
 * experiments
 ** set up
@@ -41,9 +51,11 @@ Data n=100:
 
 [[./figures/data.png]]
 
-x_0 ~ N(-0.5, 0.5)
+h = linspace(-2.5, 1, n)
 
-x_1 = 2 * x_0
+x_0 ~ Uniform(1..4) h + N(0, 0.2)
+
+x_1 ~ Uniform(1..4) h + N(0, 0.2)
 
 Loss function is the negative loss likelihood of the logistic regression model.
 
@@ -51,7 +63,77 @@ Optimizer: AdaDelta
 
 Number of Epoch: 1000
 
-Regulizers: elastic net, lasso, ridge, OWL, weighted lasso, weighted ridge, our penalty
+Regulizers: elastic net, lasso, ridge, OWL, weighted lasso, weighted ridge,
+penalty, eye penalty
+
+*** eye penalty
+
+pena(\theta) = \alpha * (0.5 * (1-c) * ||r * \theta||_2^2 + c * ||(1-r) *
+\theta||_1)
+
+where r \in [0,1]^d, \theta \in R^d, \alpha \in R, c \in R
+
+unit ball defined as:
+
+pena(\theta) = k
+
+where k is chosen so that slope in the first quadrant between known risk
+factor x and unknown risk factor is -1
+
+eye_penalty(\theta) = |t| s.t pena(\theta/t) = k if \theta \neq 0 else 0
+
+This is indeed a norm
+
+1) eye_penalty(t \theta) = |t| eye_penalty(\theta)
+2) eye_penalty(\theta + \beta) \leq eye_penalty(\theta) + eye_penalty(\beta)
+3) eye_penalty(\theta) = 0 iff \theta = 0
+
+
+varying r_1 and r_2
+
+r_1 = 0.0
+
+[[./contour/eye_0_0.png]]
+
+r_1 = 0.1
+
+[[./contour/eye_0.1.png]]
+
+r_1 = 0.2
+
+[[./contour/eye_0.2.png]]
+
+r_1 = 0.3
+
+[[./contour/eye_0.3.png]]
+
+r_1 = 0.4
+
+[[./contour/eye_0.4.png]]
+
+r_1 = 0.5
+
+[[./contour/eye_0.5.png]]
+
+r_1 = 0.6
+
+[[./contour/eye_0.6.png]]
+
+r_1 = 0.7
+
+[[./contour/eye_0.7.png]]
+
+r_1 = 0.8
+
+[[./contour/eye_0.8.png]]
+
+r_1 = 0.9
+
+[[./contour/eye_0.9.png]]
+
+r_1 = 1.0
+
+[[./contour/eye_1.0.png]]
 
 *** elastic net
 \alpha * (c * ||\theta||_1 + 0.5 * (1 - c) * ||\theta||_2^2) where c is a scaler
@@ -71,15 +153,15 @@ Regulizers: elastic net, lasso, ridge, OWL, weighted lasso, weighted ridge, our 
 *** OWL
 \alpha * \sum_{i=1}^n w_i |x|_{[i]} where w \in K_{m+} (monotone nonnegative cone)
 
-[[./contour/OWL w1=2 > w2=1.png]]
+[[./contour/OWL_w1=2>w2=1.png]]
 
 degenerated case: back to lasso
 
-[[./contour/OWL w1=1 = w2=1.png]]
+[[./contour/OWL_w1=1=w2=1.png]]
 
 degenerated case: back to l_{\inf}
 
-[[./contour/OWL w1=2 > w2=0.png]]
+[[./contour/OWL_w1=2>w2=0.png]]
 
 some properties:
 
@@ -100,7 +182,7 @@ are easily calculated)
 
 [[./contour/wridge_add.png]]
 
-*** our penalty
+*** old penalty
 \alpha * (0.5 * (1-c) * ||r * \theta||_2^2 + c * ||(1-r) * \theta||_1)
 where r \in \{0,1\}^d, \theta \in R^d, \alpha \in R, c \in R
 
@@ -124,11 +206,11 @@ repeat the following 100 times:
 
 generate data, run the selected regularizers, record \theta
 
-[[./old_figures/$x_0$ distribution.png]]
+[[./old_figures/$x_0$_distribution.png]]
 
-[[./old_figures/$x_1$ distribution.png]]
+[[./old_figures/$x_1$_distribution.png]]
 
-[[./old_figures/b distribution.png]]
+[[./old_figures/b_distribution.png]]
 
 [[./old_figures/avg_reg.png]]
 
@@ -146,21 +228,13 @@ repeat the following 100 times:
 
 generate data, run the selected regularizers, record \theta
 
-[[./figures/$x_0$ distribution.png]]
-
-[[./figures/$x_1$ distribution.png]]
-
-[[./figures/b distribution.png]]
-
-[[./figures/avg_reg.png]]
-
 *** third run
 
 b unregularized
 
 generate two datasets, one for training, one for validation
 
-normalize the data to zero mean and unit variance (validaton data is normalized
+normalize the data to 2 mean and 2 variance (validaton data is normalized
 using mean and variance for the training data)
 
 parameter search over the different hyperparams of the regularizers
@@ -174,4 +248,10 @@ generate data, normalize data, run the selected regularizers, record \theta
 The choosing criteria is still loss b/c AUROC is always going to be 1 in the
 deterministic case:
 
+[[./figures/$x_0$_distribution.png]]
 
+[[./figures/$x_1$_distribution.png]]
+
+[[./figures/$x_2$_distribution.png]]
+
+[[file:figures/avg_reg.png]]

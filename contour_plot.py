@@ -7,13 +7,19 @@ xlist = np.linspace(a, b, 100)
 ylist = np.linspace(a, b, 100)
 X, Y = np.meshgrid(xlist, ylist)
 
-def drawContour(Z, name, levels=None, save=False):
+def drawContour(Z, name, levels=None,
+                save=False, c=None):
     if levels:
-        cp = plt.contour(X, Y, Z, levels)
+        if c:
+            cp = plt.contour(X, Y, Z, levels, colors=c)
+        else:
+            cp = plt.contour(X, Y, Z, levels)            
     else:
-        cp = plt.contour(X, Y, Z)
-    plt.clabel(cp, inline=True,
-               fontsize=10)
+        if c:
+            cp = plt.contour(X, Y, Z, colors=c)
+        else:
+            cp = plt.contour(X, Y, Z)
+    plt.clabel(cp, inline=True, fontsize=10)
     plt.title(name + ' Contour Plot')
     plt.xlabel('x')
     plt.ylabel('y')
@@ -32,34 +38,52 @@ w0 = 1; w1 = 2 # assume x known y unkown
 Zwlasso = alpha * (w0 * abs(X) + w1 * abs(Y))
 Zwridge = 0.5 * alpha * (w0 * X**2 + (w1 * Y)**2)
 
-Zpenalty = 2 *alpha * (l1_ratio * abs(Y) +
-                    0.5 * (1-l1_ratio) * X**2)
+Zpenalty = 2 * alpha * (l1_ratio * abs(Y) +
+                        0.5 * (1-l1_ratio) * X**2)
 def ZOWL(w1, w2):
     if w1 < w2: w1, w2 = w2, w1
     return w1 * np.where(abs(X)>abs(Y), abs(X), abs(Y)) +\
         w2 * np.where(abs(X)<=abs(Y), abs(X), abs(Y))
 
-def Zeye(X, Y):
+def Zeye(r1=1, r2=0):
+    # assert 0 <= r1 <= 1 and 0 <= r2 <=1, "invalid r1 r2"
     def solveQuadratic(a, b, c):
         return (-b + np.sqrt(b**2-4*c*a)) / (2*a)
     if l1_ratio == 0 or l1_ratio == 1:
         return Zpenalty
-    b = l1_ratio * abs(Y)
-    a = 0.5 * (1-l1_ratio) * X**2
-    c = alpha * l1_ratio**2 / (1-l1_ratio)
-    return 1 / solveQuadratic(a, b, -c)
+    b = l1_ratio * (abs((1-r1) * X) + abs((1-r2) * Y))
+    a = 0.5 * (1-l1_ratio) * ((r1 * X)**2 + (r2 * Y)**2) 
+    c = l1_ratio**2 / (1-l1_ratio)
+    if r1 == 0 and r2 == 0: return b/c
+    return alpha * 1 / solveQuadratic(a, b, -c)
 
-levels = [1,2,3,4,5,6,7,8,9,10]
-drawContour(Zeye(X, Y), "eye", levels)
+levels = [5]#[1,2,3,4,5,6,7,8,9,10]
+
+NUM_COLORS = 9
+cm = plt.get_cmap('gist_rainbow')
+colors = [cm(1.*i/NUM_COLORS) for i in range(NUM_COLORS)]
+
+for r1 in np.arange(0,1.01,0.1):
+    i = 0
+    for r2 in np.arange(0,r1+0.01,0.1):
+        drawContour(Zeye(r1,r2), "eye_fraction", levels,
+                    c=[colors[i%len(colors)]])
+        print(r1, r2)
+        i += 1
+    plt.show()
+
+# drawContour(Zeye(0, 0), "eye_lasso", levels) # same as lasso
+# drawContour(Zeye(1, 1), "eye_ridge", levels)  # same as wridge
+# drawContour(Zeye(0.5,0.5), "eye_enet", levels) # same as enet
 # drawContour(Zlasso, "lasso", levels)
 # drawContour(Zridge, "ridge", levels)
 # drawContour(Zenet, 'enet', levels)
 # drawContour(Zwlasso, 'wlasso', levels)
 # drawContour(Zwridge, 'wridge', levels)
 # drawContour(Zpenalty, 'penalty', levels)
-# drawContour(ZOWL(2,1), 'OWL w1=2 > w2=1', levels)
-# drawContour(ZOWL(2,0), 'OWL w1=2 > w2=0', levels)
-# drawContour(ZOWL(1,1), 'OWL w1=1 = w2=1', levels)
+# drawContour(ZOWL(2,1), 'OWL_w1=2>w2=1', levels)
+# drawContour(ZOWL(2,0), 'OWL_w1=2>w2=0', levels)
+# drawContour(ZOWL(1,1), 'OWL_w1=1=w2=1', levels)
 
 # a case in point x1 = 2 x0, so x1 + 2 x0 = c
 # Zadd = X + 2 * Y # this is the objective

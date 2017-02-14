@@ -1,5 +1,5 @@
 pushd val
-for method in {enet,penalty,wlasso,wridge,owl,lasso,ridge}
+for method in {eye,enet,penalty,wlasso,wridge,owl,lasso,ridge}
 do
     echo "$method"
     mkdir -p "montage_${method}"
@@ -12,6 +12,8 @@ do
     pushd "montage_${method}"
     montage loss* -geometry +2+2 montage_loss.png
     montage acc* -geometry +2+2 montage_acc.png
+    rm loss*
+    rm acc*
     popd
 done
 popd

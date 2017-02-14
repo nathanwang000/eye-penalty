@@ -15,9 +15,7 @@ from convergeTrigger import ConvergeTrigger
 from sklearn.metrics import roc_auc_score, roc_curve
 
 # todo
-# 3. weighted r (draw a graph first)
-# 4. introduce noice 
-# 5. consider higher dimension 
+# 5. consider higher dimension (can be easily generated)
 
 ############ utility functions ##################
 def l1norm(v):
@@ -76,7 +74,6 @@ def eye(r, alpha=1, l1_ratio=0.5):
     return f_
 
 def penalty(r, alpha=1, l1_ratio=0.5):
-    # deprecated
     def f_(theta):
         return 2 * alpha * (l1_ratio * l1norm((1-r)*theta) +
                             0.5 * (1-l1_ratio) * l2normsq(r*theta))
@@ -120,24 +117,29 @@ def enet(alpha=1, l1_ratio=0.5):
 niterations = 1000
 n = 100
 d = 2
-mu = -0.5
-sig = 0.5
+left = -2.5
+right = 1.5
+mu = (left + right) / 2
+scaleh = 4
+signoise = 0.2
+munoise = 0
 
-def gendata(plot=False, name=None):
-    column = np.sort(mu + np.random.randn(n,1) * sig, 0)
-    X = np.zeros((n, d), dtype=np.float32)
-    X[:,0] = column[:,0]
-    X[:,1] = column[:,0] * 2
-    # X = np.repeat(column, d, 1)
-    y = (X[:,0] > mu).reshape(n,1).astype(np.float32)
-    if plot:
-        plt.plot(X[:,0], X[:,1], 'o')
+def gendata(plot=False, name=None, d=d):
+    h = np.linspace(left,right,n).reshape(n,1)
+    y = h > mu
+    X = np.repeat(h, d, 1)
+    noise = np.random.randn(n,d)  * signoise + munoise
+    alpha = np.diag(np.random.randint(1,scaleh,size=d))
+    X = X.dot(alpha) + noise
+
+    if plot and d == 2:
+        plt.scatter(X[:,0],X[:,1],c=y.astype(np.int64),alpha=0.5)
         plt.axvline(x=mu, color='k', linestyle='--')
-        plt.title("generated dataset, $x_1$ = 2*$x_0$")
+        plt.title("dataset: $X_i$=$\\alpha_i$h+N(0,$\sigma$)")
+        plt.show()
         name = name or 'data'
         plt.savefig('figures/'+name+'.png', bbox_inches='tight')
-        plt.clf()
-    return X, y
+    return X.astype(np.float32), y.astype(np.float32)
 
 #############the model#########################
 class Predictor(Chain):
