@@ -1,7 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-regs = ['wlasso', 'eye', 'wridge', 'penalty', 'lasso', 'ridge',
+regs = ['wlasso', 'eye', 'wridge',
+        'penalty', 'lasso', 'ridge'],
         'owl', 'enet']
 
 NUM_COLORS = len(regs)
@@ -11,7 +12,6 @@ colors = [cm(1.*i/NUM_COLORS) for i in range(NUM_COLORS)]
 def loadData(method):
     data = np.load('result_'+method+'/theta.npy')
     return data[~np.isnan(data).any(axis=1)]
-
 
 nbins = 50
 
@@ -25,11 +25,10 @@ def plotFeature(f_num, nbins=50, savefig=False):
         plt.legend()
     if savefig: plt.savefig('figures/'+tstr.replace(" ","_")+".png")
     else: plt.show()
-    plt.clf()
 
-# plotFeature(0, savefig=True) # x0
-# plotFeature(1, savefig=True) # x1
-# plotFeature(2, savefig=True) # b
+# plotFeature(0) # x0
+# plotFeature(1) # x1
+# plotFeature(2) # b
 
 # nfeatures for x0 x1 b is 3
 def plotBar(n_features, savefig=False): 

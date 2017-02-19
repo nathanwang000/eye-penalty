@@ -7,9 +7,8 @@ import collections
 import math
 
 dirname = 'val'
-regs = ['lasso', 'ridge', 'enet', 'penalty',
+regs = ['lasso', 'ridge', 'enet', # 'penalty',
         'wlasso', 'wridge', 'owl', 'eye']
-
 
 def extract(record):
     def extractRecord(item):
@@ -58,7 +57,8 @@ def genplots():
 def returnBest(methods=regs, criteria='validation/main/loss',
                minimize = True,
                report=['validation/main/loss',
-                       'validation/main/accuracy']):
+                       'validation/main/accuracy',
+                       'validation/main/auroc']):
     if type(methods) is str: methods = [methods]
     if criteria in report:
         index = report.index(criteria)
@@ -74,8 +74,11 @@ def returnBest(methods=regs, criteria='validation/main/loss',
         record = json.load(open(path.join(dirname, fn, 'log')))
         extractRecord = extract(record)
         key = extractRecord(criteria)
-        print(args, key[-1], *[extractRecord(r)[-1]\
-                               for r in report])
+        try:
+            print(args, key[-1], *[extractRecord(r)[-1]\
+                                   for r in report])
+        except:
+            continue # key not exist
         if (math.isnan(key[-1]) or math.isinf(key[-1])): continue
         if D.get(method) is None:
             D[method] = (args, key[-1], *[extractRecord(r)[-1]
