@@ -16,29 +16,12 @@ from sklearn.metrics import roc_auc_score, roc_curve
 import hashlib, pickle
 
 # todo
-# 1. make a hash (done)
-# 2. document data production
-# 3. implement naive metric
-# 4. develop a more general metric
-# 5. change plotResult.py for arg extraction
+# 1. develop a more general metric
+# 2. look for all unknown but different weight (balanced data)
+# 3. weight the general metric in naive kl metric
+# 4. graph group_theta and the weight
 
 ############ utility functions ##################
-def kl(p, q):
-    # calculate KL(p||q) = E(log p/q)
-    # normalize p and q to abs, p,q are np array
-    if np.abs(p).sum() == 0:
-        pnorm = np.ones_like(p) / p.size
-    if np.abs(q).sum() == 0:
-        qnorm = np.ones_like(p) / q.size
-    pnorm = np.abs(p) / np.abs(p).sum()
-    qnorm = np.abs(q) / np.abs(q).sum()
-    # smooth
-    smooth = 1e-6
-    if (pnorm == 0).sum() + (qnorm == 0).sum() > 0:
-        pnorm = (np.abs(p)+smooth) / (np.abs(p)+smooth).sum()
-        qnorm = (np.abs(q)+smooth) / (np.abs(q)+smooth).sum()
-    return (pnorm * log(pnorm) - pnorm * log(qnorm)).sum()
-
 def l1norm(v):
     return F.sum(abs(v))
 
@@ -72,7 +55,10 @@ def normalizer(mu=2, std=2):
     return normalize
 
 ############ penalties ##########################
-def eye(r, alpha=1, l1_ratio=0.5):
+def eye(r, alpha=1):
+    # l1_ratio change will just stretch the unit norm ball
+    # so it can be fixed
+    l1_ratio = 0.5 
     if l1_ratio == 0 or l1_ratio == 1:
         return penalty(r, alpha, l1_ratio)
     
@@ -150,9 +136,8 @@ group_theta = np.ones(1000)[:,None]
 #     6,  -7,  -2,   5,   8,   2,  -9,   8,   3
 # ])[:,None]
 
-# todo: document this in readme
-def genPartitionData(n=n, nrgroups=6, nirgroups=0, pergroup=10,\
-                     signoise=0, scaleh=2, munoise=0,\
+def genPartitionData(n=n, nrgroups=11, nirgroups=11, pergroup=10,\
+                     signoise=0.2, scaleh=2, munoise=0,\
                      left=-3, right=1,
                      plot=False, name=None):
     mu = (left + right) / 2
@@ -266,17 +251,20 @@ class Regresser(Chain):
 
 ############ run #############################
 def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
-                 printreport=False):
+                 printreport=False, resume=True):
+    print(outdir)
     thetas = []
-    # define model
+
     for i in range(num_runs):
         X, y = datagen()
+        Xval, yval = datagen()
         if printreport:
             print("percentage of ones:", y.mean())
         # preprocess
         normalize = normalizer()
         X = normalize(X)
-        
+        Xval = normalize(Xval, train=False)
+        # define model        
         model = Regresser(Predictor(1),
                           lossfun=lossfun,
                           regularizer=reg)
@@ -284,28 +272,46 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
         optimizer.setup(model)
         # train model
         train_iter = iterators.SerialIterator(TupleDataset(X,y),
-                                              batch_size=100,
-                                              shuffle=False)
+                                                  batch_size=100,
+                                                  shuffle=False)
         updater = training.StandardUpdater(train_iter, optimizer)
         trainer = training.Trainer(updater, (niterations, 'epoch'),
                                    out=outdir)
         trainer.extend(extensions.LogReport(log_name="log_"+str(i)))
         if printreport:
-            trainer.extend(extensions.PrintReport(['epoch',
-                                                   'main/accuracy',
+            # validate
+            test_iter = iterators.SerialIterator\
+                        (TupleDataset(Xval,yval),
+                         batch_size=100,
+                         repeat=False,
+                         shuffle=False)
+            trainer.extend(extensions.Evaluator(test_iter, model))
+            trainer.extend(extensions.PrintReport(['main/accuracy',
                                                    'main/penalty',
-                                                   'main/loss']))       
-        trainer.run()
+                                                   'validation/main/loss',
+                                                   'main/loss']))
+            
+        try:
+            trainer.run()
+            should_break=False
+        except:
+            should_break=True
         # save model
-        if trainer.observation['main/loss'].data == np.nan or\
-           trainer.observation['main/loss'].data == np.inf or\
-           trainer.observation['main/penalty'].data == np.nan or\
-           trainer.observation['main/penalty'].data == np.inf: continue
+        if trainer.observation.get('main/loss') is not None and\
+           trainer.observation.get('main/penalty') is not None and\
+           (trainer.observation['main/loss'].data == np.nan or\
+            trainer.observation['main/loss'].data == np.inf or\
+            trainer.observation['main/penalty'].data == np.nan or\
+            trainer.observation['main/penalty'].data == np.inf): continue
         W = model.predictor.l1.W
         b = model.predictor.l1.b
         theta = F.concat((F.flatten(W), b), 0)
         thetas.append(theta.data)
-        return trainer, model
+
+        if should_break: break
+        
+    if resume and os.path.isfile("theta.npy"):
+        thetas = np.vstack((np.load("theta.npy"), np.array(thetas)))
     np.save(os.path.join(outdir, "theta"), np.array(thetas))
     
 
@@ -345,8 +351,7 @@ def paramsSearch():
                    (0.1, 0.01, 0.001, 0.0001)),
         'owl': (OWL, ([2,1], [1,1], [1,0]),
                 (0.1, 0.01, 0.001, 0.0001)),
-        'eye': (eye, (r,), (0.1, 0.01, 0.001, 0.0001),
-                tuple(i/10 for i in range(1,10)))
+        'eye': (eye, (r,), (0.1, 0.01, 0.001, 0.0001))
     }
 
     for method in params_cand:
@@ -386,7 +391,7 @@ def paramsSearchNd():
     nrgroups = 11
     nirgroups = nrgroups
     pergroup = 10
-    n = 10000
+    n = 5000
     # construct known and unknown variables
     # in this case there's 220 variables with 110 variables being noise    
     nrvars = nrgroups * pergroup
@@ -396,12 +401,14 @@ def paramsSearchNd():
     r = np.concatenate((r,r))
     
     # gen data
-    Xtrain, ytrain = genPartitionData(nrgroups=nrgroups,nirgroups=nirgroups,
+    Xtrain, ytrain = genPartitionData(nrgroups=nrgroups,
+                                      nirgroups=nirgroups,
                                       pergroup=pergroup,n=n)
-    Xval, yval = genPartitionData(nrgroups=nrgroups,nirgroups=nirgroups,
+    Xval, yval = genPartitionData(nrgroups=nrgroups,
+                                  nirgroups=nirgroups,
                                   pergroup=pergroup,n=n)
 
-    # preprocess 10000 examples
+    # preprocess 5000 examples
     normalize = normalizer()
     Xtrain = normalize(Xtrain)
     Xval = normalize(Xval, train=False)    
@@ -412,20 +419,17 @@ def paramsSearchNd():
     owl2 = np.zeros(r.size)  # inf norm
     owl2[0] = 1
     params_cand = {
-        'lasso': (lasso, (0.1, 0.01, 0.001, 0.0001)),
-        'ridge': (ridge, (0.1, 0.01, 0.001, 0.0001)),
-        'enet': (enet, (0.1, 0.01, 0.001, 0.0001),
+        'lasso': (lasso, (1e-2, 5e-3, 1e-3, 5e-4)),
+        'ridge': (ridge, (1e-2, 5e-3, 1e-3, 5e-4)),
+        'enet': (enet, (1e-2, 5e-3, 1e-3, 5e-4),
                  tuple(i/10 for i in range(1,10))),
-        # 'penalty': (penalty, (r,), (0.1, 0.01, 0.001, 0.0001),
-        #             tuple(i/10 for i in range(1,10))),
-        'eye': (eye, (r,), (0.1, 0.01, 0.001, 0.0001),
-                tuple(i/10 for i in range(1,10))),
+        'eye': (eye, (r,), (1e-2, 5e-3, 1e-3, 5e-4)),
         'wlasso': (weightedLasso, (w1,),
-                   (0.1, 0.01, 0.001, 0.0001)),
+                   (1e-2, 5e-3, 1e-3, 5e-4)),
         'wridge': (weightedRidge, (w1,),
-                   (0.1, 0.01, 0.001, 0.0001)),
+                   (1e-2, 5e-3, 1e-3, 5e-4)),
         'owl': (OWL, (owl1, owl2),
-                (0.1, 0.01, 0.001, 0.0001))
+                (1e-2, 5e-3, 1e-3, 5e-4))
     }
 
     hash_map = {}
@@ -465,15 +469,16 @@ def paramsSearchNd():
             trainer.run()
             
 ############ set up regularizers #############
+
 def experiment2d(num_runs=100):
-    def helper(num_runs):
+    def run_with_reg_wrapper(num_runs):
         def _f(*args,**kwargs):
             return run_with_reg(*args, **kwargs, num_runs=num_runs)
         return _f
-    run = helper(num_runs)
+    run = run_with_reg_wrapper(num_runs)
     # actual run
     run(enet(0.01, 0.2), "result_enet") 
-    run(eye(array([ 1.,  0.]), 0.01, 0.4), "result_eye")
+    run(eye(array([ 1.,  0.]), 0.01), "result_eye")
     run(lasso(0.0001), "result_lasso") 
     run(OWL([2, 1], 0.01), "result_owl")
     run(penalty(array([ 1.,  0.]), 0.1, 1.0),
@@ -484,29 +489,147 @@ def experiment2d(num_runs=100):
     run(weightedRidge(array([ 1.,  2.]), 0.01), 
                  "result_wridge")
 
-def eNd():
-    # import warnings
-    # warnings.filterwarnings("error")
+
+def experimentNd(num_runs=10):
     nrgroups = 11
     nirgroups = nrgroups
     pergroup = 10
-    n = 10000
+    n = 5000
     # construct known and unknown variables
     nrvars = nrgroups * pergroup
     r = np.zeros(nrvars)
     for i in range(0, nrvars//pergroup):
         r[(i*pergroup):(i*pergroup+i)] = 1
     r = np.concatenate((r,r))
+    w1 = 2-r
+    owl1 = np.arange(r.size) # polytope
+    owl2 = np.zeros(r.size)  # inf norm
+    owl2[0] = 1
     # gen data
     datagen = lambda: genPartitionData(nrgroups=nrgroups,
                                        nirgroups=nirgroups,
                                        pergroup=pergroup,n=n)
-    run_with_reg(lasso(0.01), datagen=datagen, printreport=True)    
-    # try:
-    # run_with_reg(eye(r,0.01), datagen=datagen, printreport=True)
-    # except RuntimeWarning:
-    #     a = 1
-    # import ipdb; ipdb.set_trace()
+    def run_with_reg_wrapper(num_runs, datagen):
+        def _f(*args,**kwargs):
+            return run_with_reg(*args, **kwargs,
+                                num_runs=num_runs,
+                                datagen=datagen)
+        return _f
+    run = run_with_reg_wrapper(num_runs, datagen)    
+    # run
+    run(eye(r, 0.01), outdir="result_eye")
+    # run(enet(0.001, 0.4), outdir="result_enet")
+    # run(lasso(0.001), outdir="result_lasso")
+    # run(ridge(0.001), outdir="result_ridge")
+    # run(weightedLasso(w1, 0.01), outdir="result_wlasso")
+    # run(weightedRidge(w1, 0.01), outdir="result_wridge")
+    # run(OWL(owl2, 0.001), outdir="result_owl")     
+
+############# helpers
+def kl(p, q):
+    # calculate KL(p||q) = E(log p/q)
+    # normalize p and q to abs, p,q are np array
+    if np.abs(p).sum() == 0:
+        pnorm = np.ones_like(p) / p.size
+    if np.abs(q).sum() == 0:
+        qnorm = np.ones_like(p) / q.size
+    pnorm = np.abs(p) / np.abs(p).sum()
+    qnorm = np.abs(q) / np.abs(q).sum()
+    # smooth
+    smooth = 1e-6
+    if (pnorm == 0).sum() + (qnorm == 0).sum() > 0:
+        pnorm = (np.abs(p)+smooth) / (np.abs(p)+smooth).sum()
+        qnorm = (np.abs(q)+smooth) / (np.abs(q)+smooth).sum()
+    return (pnorm * np.log(pnorm) - pnorm * np.log(qnorm)).sum()
+        
+def knownRiskFactorReader(r, t, nrgroups, nirgroups, pergroup):
+    # assume r is formulated such that nrgroups are first
+    # and pergroup are together in r
+    # t is theta
+    assert r.size == (nrgroups + nirgroups) * pergroup, "size not checked"
+    assert r.size == t.size, "size mismatch"
+    ptr_s = 0
+    while ptr_s < r.size:
+        ptr_e = ptr_s + pergroup
+        rout = r[ptr_s:ptr_e]
+        tout = t[ptr_s:ptr_e]        
+        if ptr_s < nrgroups * pergroup:
+            yield rout, tout, 'relevant'
+        else:
+            yield rout, tout, 'irrelevant'
+        ptr_s += pergroup
+
+def naiveKLmetric(risk, theta, nrgroups, nirgroups, pergroup):
+    # assume r is formulated such that nrgroups are first
+    # and pergroup are together in r
+    loss = 0
+    g = knownRiskFactorReader(risk, theta,
+                              nrgroups, nirgroups, pergroup)
+    for r, t, tag in g:
+        l =  0
+        w = np.abs(t).sum() # weight for loss
+        if tag == "relevant":
+            if np.all(r==0): # all unknown (want spike)
+                target = np.zeros_like(r)
+                target[0] = 1
+                l = min(kl(np.roll(target, i), t)
+                        for i in range(r.size))
+            else: # has known
+                l = kl(r, t)
+        elif tag == "irrelevant":
+            target = np.ones_like(r)
+            l = kl(target, t)
+        loss += l
+        yield l,w,r,t,tag
+    
+    # the following 2 may not be important b/c the fact of same performance
+    # already says the following is true
+    # deal with irrelvant: should all be 0
+    # each should be weighted against the true theta_i for each group
+    return loss    
+
+def KLmetricUser(fn):
+    nrgroups = 11
+    nirgroups = nrgroups
+    pergroup = 10
+    n = 5000
+    # construct known and unknown variables
+    nrvars = nrgroups * pergroup
+    r = np.zeros(nrvars)
+    for i in range(0, nrvars//pergroup):
+        r[(i*pergroup):(i*pergroup+i)] = 1
+    r = np.concatenate((r,r))
+    t = np.load(os.path.join(fn, "theta.npy"))
+    n = naiveKLmetric(r, t.mean(0)[:-1], nrgroups, nirgroups, pergroup)
+    return n
 
 
-paramsSearchNd()
+#------------temporary function###################
+def tmp():
+    nrgroups = 11
+    nirgroups = nrgroups
+    pergroup = 10
+    n = 5000
+    # construct known and unknown variables
+    nrvars = nrgroups * pergroup
+    r = np.zeros(nrvars)
+    for i in range(0, nrvars//pergroup):
+        r[(i*pergroup):(i*pergroup+i)] = 1
+    r = np.concatenate((r,r))
+    w1 = 2-r
+    owl1 = np.arange(r.size) # polytope
+    owl2 = np.zeros(r.size)  # inf norm
+    owl2[0] = 1
+    # gen data
+    datagen = lambda: genPartitionData(nrgroups=nrgroups,
+                                       nirgroups=nirgroups,
+                                       pergroup=pergroup,n=n)
+    def run_with_reg_wrapper(datagen):
+        def _f(*args,**kwargs):
+            return run_with_reg(*args, **kwargs,
+                                datagen=datagen,
+                                printreport=True,
+                                resume=False)
+        return _f
+    run = run_with_reg_wrapper(datagen)    
+    return run, r

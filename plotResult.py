@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from os import listdir, path
 import collections
 import math
+import pickle
 
 dirname = 'val'
 regs = ['lasso', 'ridge', 'enet', # 'penalty',
@@ -47,10 +48,7 @@ def genplots():
     for fn in listdir(dirname):
         if not path.isdir(path.join(dirname, fn)) or\
            fn.startswith("montage"): continue
-        param_index = fn.find('(')
-        method = fn[:param_index]
-        args = eval(fn[param_index:])
-        print(method, args)
+        print(fn)
         plotResult(path.join(dirname, fn, 'log'), fn)
 
 
@@ -70,7 +68,14 @@ def returnBest(methods=regs, criteria='validation/main/loss',
         param_index = fn.find('(')
         method = fn[:param_index]
         if method not in methods: continue
-        args = eval(fn[param_index:])
+        args = fn[param_index:]
+        #### special case for storing hashes, quick hack #######
+        if args[-1] != ')':
+            arg = hash2arg(args[1:])
+            if type(arg[0]) is np.ndarray:
+                arg = arg[1:]
+            args = (arg, args[1:])
+            
         record = json.load(open(path.join(dirname, fn, 'log')))
         extractRecord = extract(record)
         key = extractRecord(criteria)
@@ -91,4 +96,6 @@ def returnBest(methods=regs, criteria='validation/main/loss',
                                for r in report])
     return D
 
-
+_hashmap = pickle.load(open(path.join(dirname, "hashmap"), 'rb'))
+def hash2arg(h):
+    return _hashmap[h]

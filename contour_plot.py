@@ -64,13 +64,13 @@ levels = [5]#[1,2,3,4,5,6,7,8,9,10]
 NUM_COLORS = 10
 cm = plt.get_cmap('gist_rainbow')
 colors = [cm(1.*i/NUM_COLORS) for i in range(NUM_COLORS)]
-# i=0
-# for l in np.arange(0.1,1,0.1):
-#     l1_ratio = l
-#     drawContour(Zeye(l1_ratio=l1_ratio),
-#                 "eye", levels, c=[colors[i%len(colors)]])
-#     i+=1
-# plt.show()    
+i=0
+for l in np.arange(0.1,1,0.1):
+    l1_ratio = l
+    drawContour(Zeye(l1_ratio=l1_ratio),
+                "eye", levels, c=[colors[i%len(colors)]])
+    i+=1
+plt.show()    
 
 # drawContour(Zeye(0, 0), "eye_lasso", levels) # same as lasso
 # drawContour(Zeye(1, 1), "eye_ridge", levels)  # same as wridge

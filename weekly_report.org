@@ -18,12 +18,44 @@ Incorporating known risk factors with unknown risk factors in predicting outcome
 In the case of choosing between correlated variables, the model should favor
 known risk factors.
 
+* measuring success
+
+Fixing the level of performance, the task of learning is to allocate weights to
+features so that desired structures are kept. A familiar example is lasso
+regression where the diamond shaped contour forces weights to be sparse so that
+they are interpretable in a sense. Another example is ridge regression where it
+corresponds to having a gaussian prior on weights. Learning is really a
+combination of data and domain expertise. Each model implicitly carries
+assumptions into the learning task and there's no universal consistent algorithm
+that works best under all distributions (no free lunch thm). However, there is
+one thing that for sure we want no matter what assumptions we make, that is the
+credibility of the model. In addition to having good performance, we want the
+model to be consistent with the current literature. More concretely, we want the
+model to place high weights on relevant and known features while keeping the
+unknown relevant features sparse. This whole process should be done in a data
+driven way so that the known risk factors are merely suggestions for the model
+to consider instead of forced constraints. In this spirit, we list the following
+properties of a credible model:
+
+a) credibility should not come at the cost of performance
+b) irrelevant features whether known or unknown should have low weights
+c) within a group of dependent features, known risk factors should be given more
+weights while weights in known risk factors should be dense
+d) within a group of dependent features of all unknown risk factors, the weights
+should be sparse
+
+criteria a) are acheived by grid searching over validation set so that
+models in consideration has similar level of performance. b) is acheive by
+constraining on the size of parameters which all regularization does.
+
+For c) and d) we measure the KL divergence in each group of dependent features.
+
 * approaches taken
 
 ** old approach 
 
 0.5 * \lambda_2 ||r * \theta||_2^2 + \lambda_1 ||(1-r) * \theta||_1
-where r \in \{0,1\}^d, \theta \in R^d
+where r \in {0,1}^d, \theta \in R^d
 
 [[./contour/penalty.png]]
 
@@ -34,6 +66,8 @@ angle at the end point is 45 degree. The following is the contour plot of its
 induced norm
 
 [[./contour/eye.png]]
+
+
 
 In fact, by relaxing the constraint of r over binary to float, we can recover
 enet (setting r=0.5 * 1). Even without extending r, we can recover ridge (r=1) 
@@ -47,7 +81,39 @@ and lasso (r=0)
 
 * experiments
 ** set up
-Data n=100:
+*** nd data generation (genPartitionData)
+
+Data n = 5000
+
+n relevant groups (nrgroups) = 11
+
+n irrelevant group (nirgroups) = 11
+
+correlated variables pergroup (npergroup) = 10
+
+h_i = Uniform(-3, 1, n)
+
+theta_i = 1
+
+x_{i,j} ~ Uniform(1..2) h_i + N(0, 0.2) for i \in [n] for j \in [npergrop]
+
+y = \sum_{i=1}^{nrgroups} h_i \theta_i > -1
+
+r (known risk factors): for each correlated variable group, putting in one
+more known risk factor than the previous group
+
+Loss function is the negative loss likelihood of the logistic regression model.
+
+Optimizer: AdaDelta
+
+Number of Epoch: 1000
+
+Regulizers: elastic net, lasso, ridge, OWL, weighted lasso, weighted ridge, 
+eye penalty
+
+*** 2d data generation
+
+Data n = 100:
 
 [[./figures/data.png]]
 
@@ -56,6 +122,10 @@ h = linspace(-2.5, 1, n)
 x_0 ~ Uniform(1..4) h + N(0, 0.2)
 
 x_1 ~ Uniform(1..4) h + N(0, 0.2)
+
+y = h > 0.5
+
+r (known risk factors) = [1, 0]
 
 Loss function is the negative loss likelihood of the logistic regression model.
 
@@ -68,26 +138,124 @@ penalty, eye penalty
 
 *** eye penalty
 
-pena(\theta) = \alpha * (0.5 * (1-c) * ||r * \theta||_2^2 + c * ||(1-r) *
-\theta||_1)
+q(\theta) := 2 \beta ||(1-r) * \theta||_1 + $
+(1-\beta) ||r*\theta||_2^2
 
-where r \in [0,1]^d, \theta \in R^d, \alpha \in R, c \in R
+pena(\theta) := \alpha q(\theta)
 
-unit ball defined as:
+where r \in {0,1}^d, \theta \in R^d, \alpha \in R_{+}, \beta \in (0,1) (\beta is also
+called l1_ratio in this text)
 
-pena(\theta) = k
+For any constant c
 
-where k is chosen so that slope in the first quadrant between known risk
+pena(\theta) = c
+
+is convex because pena is convex (addition of positively weighted norms)
+
+similarly, q(\theta) = c is also convex
+
+c can be chosen so that slope in the first quadrant between known risk
 factor x and unknown risk factor is -1
 
-eye_penalty(\theta) = |t| s.t pena(\theta/t) = k if \theta \neq 0 else 0
+we define eye norm as a an atomic norm $||\cdot||_A$ as introduced in [[https://people.eecs.berkeley.edu/~brecht/papers/2010-crpw_inverse_problems.pdf][Venkat et al.]]
 
-This is indeed a norm
+$||x||_A := \inf\{t>0|x \in t conv(A)\}$
 
-1) eye_penalty(t \theta) = |t| eye_penalty(\theta)
-2) eye_penalty(\theta + \beta) \leq eye_penalty(\theta) + eye_penalty(\beta)
-3) eye_penalty(\theta) = 0 iff \theta = 0
+Let $A=\{x|q(x) = \frac{\beta^2}{1-\beta}\}$, we get the eye
+penalty
 
+Note that A is already a convex set, equivalently we write
+
+$eye(x) = \inf\{t>0|x \in t\{ x | q(x) = \frac{\beta^2}{1-\beta}\}\}$
+
+**** derivation
+
+The main intuition is to set c so that the slope in the first quadrant between known risk
+factor x and unknown risk factor is -1. Since we only care about this
+interaction between known and unknown risk factors and that {x|pena(x)=c} is
+symmetric about origin, WLOG, we let y be the unknown feature and x be the known
+risk factor with constraint y \geq 0, x \geq 0. 
+
+\begin{align}
+&\  \alpha [2 \beta y + (1-\beta) x^2] = c \\
+&\rightarrow 2 \beta y + (1-\beta) x^2 = \frac{c}{\alpha} \\
+&\rightarrow y = \frac{c}{2\alpha\beta} - \frac{(1-\beta) x^2}{2 \beta}\\
+&\rightarrow y = 0 \Rightarrow x = \sqrt{\frac{c}{\alpha(1-\beta)}}\\ 
+&\rightarrow f'(x) = -\frac{(1-\beta)}{\beta}x\\
+&\rightarrow f'(\sqrt{\frac{c}{\alpha(1-\beta)}}) = -\frac{1-\beta}{\beta} \sqrt{\frac{c}{\alpha(1-\beta)}} = -1 \\
+&\rightarrow c = \frac{\alpha\beta^2}{1-\beta}\\
+&\rightarrow 2 \beta y + (1-\beta) x^2 = \frac{\beta^2}{1-\beta}
+\end{align}
+
+Thus, we just need q(x) = \frac{\beta^2}{1-\beta}
+
+**** properties:
+a) A is symmetric about origin (x \in A then -x \in A), so this is a norm
+1) eye(t \theta) = |t| eye(\theta)
+2) eye(\theta + \beta) \leq eye(\theta) + eye(\beta)
+3) eye(\theta) = 0 iff \theta = 0
+
+b) \beta doesn't affect the shape of contour, so no need to
+search over \beta
+
+proof: 
+
+consider the contour B_1 = {x: eye_{\beta_1}}(x) = t} and
+B_2 = {x: eye_{\beta_2}}(x) = t}
+
+We want to show B_1 is similar to B_2
+
+case1: t = 0, then B_1 = B_2 = {0} by property a3
+
+case2: t \neq 0
+
+we can equivalently write B_1 and B_2 as: (by definition and a1 and q convex)
+
+B_1 = t {x: x \in {x | q_{\beta_1}(x) = $\frac{\beta_1^2}{1-\beta_1}$ }}
+
+B_2 = t {x: x \in {x | q_{\beta_2}(x) = $\frac{\beta_2^2}{1-\beta_2}$ }}
+
+let B_1' = {x: x \in {x | q_{\beta_1}(x) = $\frac{\beta_1^2}{1-\beta_1}$ }}
+and B_2' = {x: x \in t {x | q_{\beta_2}(x) = $\frac{\beta_1^2}{1-\beta_2}$ }}
+
+Claim: B_2' = $\frac{\beta_2 (1-\beta_1)}{\beta_1 (1-
+beta_2)}$ B_1'
+
+It should be clear that if this claim is true then B_1 is similar to B_2
+and we are done
+
+take x \in B_1'
+
+then q_{\beta_1}(x) = 2 \beta_1 ||(1-r) * x||_1 +
+(1-\beta_1) ||r*x||_2^2 = $\frac{\beta_1^2}{1-\beta_1}$
+
+let x' = $\frac{\beta_2 (1-\beta_1)}{\beta_1 (1-\beta_2)}$ x
+
+\begin{align}
+q_{\beta_2}(x') &= 2 \beta_2 ||(1-r) * x'||_1 +
+ (1-\beta_2) ||r*x'||_2^2\\
+&= \frac{2 \beta_2^2 (1-\beta_1)}{\beta_1 (1-\beta_2)} ||(1-r) * x||_1 + 
+\frac{\beta_2^2 (1-\beta_1)^2}{\beta_1^2 (1-\beta_2)} ||r*x||_2^2\\
+&= \frac{\beta_2^2 (1-\beta_1)}{\beta_1^2 (1-\beta_2)} (2 \beta_1 ||(1-r) * x||_1 +
+(1-\beta_1) ||r*x||_2^2)\\
+&= \frac{\beta_2^2 (1-\beta_1)}{\beta_1^2 (1-\beta_2)} \frac{\beta_1^2}{1-\beta_1} \\
+&= \frac{\beta_2^2}{1-\beta_2}
+\end{align}
+
+so x' \in B_2'. Thus $\frac{\beta_2 (1-\beta_1)}{\beta_1 (1-
+beta_2)}$ B_1' \subset B_2'. The other direction is similarly proven.
+
+
+
+
+
+
+
+
+
+**** extending r to [0,1]^d 
+At times, it makes sense for risk factor to be fractionally weighted (eg. odds
+ratio in medical documents)
 
 varying r_1 and r_2
 
@@ -97,43 +265,43 @@ r_1 = 0.0
 
 r_1 = 0.1
 
-[[./contour/eye_0.1.png]]
+[[./contour/eye_0_1.png]]
 
 r_1 = 0.2
 
-[[./contour/eye_0.2.png]]
+[[./contour/eye_0_2.png]]
 
 r_1 = 0.3
 
-[[./contour/eye_0.3.png]]
+[[./contour/eye_0_3.png]]
 
 r_1 = 0.4
 
-[[./contour/eye_0.4.png]]
+[[./contour/eye_0_4.png]]
 
 r_1 = 0.5
 
-[[./contour/eye_0.5.png]]
+[[./contour/eye_0_5.png]]
 
 r_1 = 0.6
 
-[[./contour/eye_0.6.png]]
+[[./contour/eye_0_6.png]]
 
 r_1 = 0.7
 
-[[./contour/eye_0.7.png]]
+[[./contour/eye_0_7.png]]
 
 r_1 = 0.8
 
-[[./contour/eye_0.8.png]]
+[[./contour/eye_0_8.png]]
 
 r_1 = 0.9
 
-[[./contour/eye_0.9.png]]
+[[./contour/eye_0_9.png]]
 
 r_1 = 1.0
 
-[[./contour/eye_1.0.png]]
+[[./contour/eye_1_0.png]]
 
 *** elastic net
 \alpha * (c * ||\theta||_1 + 0.5 * (1 - c) * ||\theta||_2^2) where c is a scaler
@@ -184,19 +352,14 @@ are easily calculated)
 
 *** old penalty
 \alpha * (0.5 * (1-c) * ||r * \theta||_2^2 + c * ||(1-r) * \theta||_1)
-where r \in \{0,1\}^d, \theta \in R^d, \alpha \in R, c \in R
+where r \in {0,1}^d, \theta \in R^d, \alpha \in R, c \in R
 
 [[./contour/penalty_add.png]]
 
 
-
-
-
-
-
 ** running procedure
 
-*** first run
+*** first run (regularized b)
 
 b regularized
 
@@ -204,21 +367,13 @@ fix hyperparmeters to predefined value
 
 repeat the following 100 times:
 
-generate data, run the selected regularizers, record \theta
+generate data (x2 = 2x1), run the selected regularizers, record \theta
 
-[[./old_figures/$x_0$_distribution.png]]
-
-[[./old_figures/$x_1$_distribution.png]]
-
-[[./old_figures/b_distribution.png]]
-
-[[./old_figures/avg_reg.png]]
-
-*** second run
+*** second run (unregularized b, validation)
 
 b unregularized
 
-generate two datasets, one for training, one for validation
+generate two datasets (x2 = 2x1), one for training, one for validation
 
 parameter search over the different hyperparams of the regularizers
 
@@ -228,11 +383,11 @@ repeat the following 100 times:
 
 generate data, run the selected regularizers, record \theta
 
-*** third run
+*** third run (data normalized, eye penalty)
 
 b unregularized
 
-generate two datasets, one for training, one for validation
+generate two datasets (x2 = 2x1), one for training, one for validation
 
 normalize the data to 2 mean and 2 variance (validaton data is normalized
 using mean and variance for the training data)
@@ -248,6 +403,33 @@ generate data, normalize data, run the selected regularizers, record \theta
 The choosing criteria is still loss b/c AUROC is always going to be 1 in the
 deterministic case:
 
+[[./old_figures/$x_0$_distribution.png]]
+
+[[./old_figures/$x_1$_distribution.png]]
+
+[[./old_figures/$x_2$_distribution.png]]
+
+[[file:old_figures/avg_reg.png]]
+
+*** Fourth run (noise added)
+
+b unregularized
+
+generate two datasets, one for training, one for validation
+
+normalize the data to 2 mean and 2 variance (validaton data is normalized
+using mean and variance for the training data)
+
+parameter search over the different hyperparams of the regularizers
+
+for each regularizer, use the hyperparmeters that acheives the minimal loss
+
+repeat the following 100 times:
+
+generate data (x_i = Uniform(0..4) h + N(0,0.2)), normalize data, run the selected regularizers, record \theta
+
+The choosing criteria is loss
+
 [[./figures/$x_0$_distribution.png]]
 
 [[./figures/$x_1$_distribution.png]]
@@ -255,3 +437,54 @@ deterministic case:
 [[./figures/$x_2$_distribution.png]]
 
 [[file:figures/avg_reg.png]]
+
+hyper parameter used:
++ enet(0.01, 0.2)
++ eye(array([ 1.,  0.]), 0.01, 0.4)
++ lasso(0.0001)
++ OWL([2, 1], 0.01)
++ penalty(array([ 1.,  0.]), 0.1, 1.0)
++ ridge(0.001)
++ weightedLasso(array([ 1.,  2.]), 0.01)
++ weightedRidge(array([ 1.,  2.]), 0.01)
+
+The sparsity in penalty can be explained as I placed no constraint on known risk
+factor (l1 ratio is 1), so it only regularizes x_1 not x_0
+
+[[./figures/main_players_x0.png]]
+
+[[./figures/main_players_x1.png]]
+
+*** fifth run (nd data)
+b unregularized
+
+generate two datasets, one for training, one for validation
+
+normalize the data to 2 mean and 2 variance (validaton data is normalized
+using mean and variance for the training data)
+
+parameter search over the different hyperparams of the regularizers
+
+for each regularizer, use the hyperparmeters that acheives the minimal loss
+
+repeat the following 100 times:
+
+generate data (detailed in nd data generation section), normalize data, run the selected regularizers, record \theta
+
+The choosing criteria is loss
+
+KL divergence with optimal:
+
+eye: 1.96333198572
+
+wlasso: 2.45327734993
+
+wridge: 6.42889655902
+
+ridge: 9.81652952705
+
+owl: 10.1766673789
+
+lasso: 10.2680425337
+
+enet: 10.7163880506

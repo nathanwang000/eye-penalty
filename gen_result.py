@@ -2,8 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 regs = ['wlasso', 'eye', 'wridge',
-        'penalty', 'lasso', 'ridge'],
-        'owl', 'enet']
+        'lasso', 'ridge',
+        'owl', 'enet'] # penalty
 
 NUM_COLORS = len(regs)
 cm = plt.get_cmap('gist_rainbow')
@@ -70,3 +70,16 @@ def plotBar(n_features, savefig=False):
     plt.clf()
     
 # plotBar(3, True)
+
+################### for nd case #################
+from comb_loss import KLmetricUser
+
+def reportNdLoss(option='total'):
+    import pprint    
+    for reg in regs:
+        n = KLmetricUser("result_"+reg)
+        if option == 'total':
+            print(reg+":", sum(l for l,_,_,_,_ in n))
+        elif option == 'loss':
+            pprint.pprint([(reg, l, tag) for l,w,r,t,tag in n])    
+

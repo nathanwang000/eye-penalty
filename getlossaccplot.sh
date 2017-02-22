@@ -1,5 +1,5 @@
 pushd val
-for method in {eye,enet,penalty,wlasso,wridge,owl,lasso,ridge}
+for method in {eye,enet,wlasso,wridge,owl,lasso,ridge}
 do
     echo "$method"
     mkdir -p "montage_${method}"
