@@ -14,12 +14,14 @@ from itertools import product
 from convergeTrigger import ConvergeTrigger
 from sklearn.metrics import roc_auc_score, roc_curve
 import hashlib, pickle
+import itertools
 
 # todo
-# 1. develop a more general metric
+# 1. develop a more general metric (weigh the general metric in naive kl metric)
 # 2. look for all unknown but different weight (balanced data)
-# 3. weight the general metric in naive kl metric
-# 4. graph group_theta and the weight
+# 3. graph group_theta, the weight, and variances 
+# 4. extend risk to fractional
+# 5. generate data in a more diverse manner: eg. x3=h1+h2
 
 ############ utility functions ##################
 def l1norm(v):
@@ -537,11 +539,12 @@ def kl(p, q):
     qnorm = np.abs(q) / np.abs(q).sum()
     # smooth
     smooth = 1e-6
-    if (pnorm == 0).sum() + (qnorm == 0).sum() > 0:
-        pnorm = (np.abs(p)+smooth) / (np.abs(p)+smooth).sum()
-        qnorm = (np.abs(q)+smooth) / (np.abs(q)+smooth).sum()
+    if (pnorm == 0).sum() > 0:
+        pnorm = (np.abs(pnorm)+smooth) / (np.abs(pnorm)+smooth).sum()
+    if (qnorm == 0).sum() > 0:
+        qnorm = (np.abs(qnorm)+smooth) / (np.abs(qnorm)+smooth).sum()
     return (pnorm * np.log(pnorm) - pnorm * np.log(qnorm)).sum()
-        
+
 def knownRiskFactorReader(r, t, nrgroups, nirgroups, pergroup):
     # assume r is formulated such that nrgroups are first
     # and pergroup are together in r
@@ -560,6 +563,7 @@ def knownRiskFactorReader(r, t, nrgroups, nirgroups, pergroup):
         ptr_s += pergroup
 
 def naiveKLmetric(risk, theta, nrgroups, nirgroups, pergroup):
+    # not intended for client: for report use    
     # assume r is formulated such that nrgroups are first
     # and pergroup are together in r
     loss = 0
@@ -588,7 +592,8 @@ def naiveKLmetric(risk, theta, nrgroups, nirgroups, pergroup):
     # each should be weighted against the true theta_i for each group
     return loss    
 
-def KLmetricUser(fn):
+def KLmetricUser(t):
+    # not intended for client: for internal report use
     nrgroups = 11
     nirgroups = nrgroups
     pergroup = 10
@@ -599,10 +604,34 @@ def KLmetricUser(fn):
     for i in range(0, nrvars//pergroup):
         r[(i*pergroup):(i*pergroup+i)] = 1
     r = np.concatenate((r,r))
-    t = np.load(os.path.join(fn, "theta.npy"))
-    n = naiveKLmetric(r, t.mean(0)[:-1], nrgroups, nirgroups, pergroup)
+    n = naiveKLmetric(r, t, nrgroups, nirgroups, pergroup)    
     return n
 
+def reportKL(fn, f=lambda x: x.mean()):
+    # report kl mean for each function
+    t = np.load(os.path.join(fn, "theta.npy"))
+    t = t[:,:-1] # exclude b
+    n, d = t.shape
+    iterables = tuple(KLmetricUser(t[i]) for i in range(n))
+    tagged_stats = []
+    for items in itertools.zip_longest(*iterables):
+        tag = items[0][4]
+        l = np.array(list(map(lambda x: x[0], items)))
+        tagged_stats.append((tag, f(l)))
+    return tagged_stats
+
+def reportTheta(fn, f=lambda x: x.mean()):
+    # report kl mean for each function
+    t = np.load(os.path.join(fn, "theta.npy"))
+    t = t[:,:-1] # exclude b
+    n, d = t.shape
+    iterables = tuple(KLmetricUser(t[i]) for i in range(n))
+    tagged_stats = []
+    for items in itertools.zip_longest(*iterables):
+        tag = items[0][4]
+        theta = np.array(list(map(lambda x: x[3], items)))
+        tagged_stats.append((tag, f(theta)))
+    return tagged_stats
 
 #------------temporary function###################
 def tmp():

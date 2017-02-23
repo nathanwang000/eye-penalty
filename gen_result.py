@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-regs = ['wlasso', 'eye', 'wridge',
+regs = ['eye','wlasso', 'wridge',
         'lasso', 'ridge',
         'owl', 'enet'] # penalty
 
@@ -72,14 +72,60 @@ def plotBar(n_features, savefig=False):
 # plotBar(3, True)
 
 ################### for nd case #################
-from comb_loss import KLmetricUser
+from comb_loss import reportKL, reportTheta
 
-def reportNdLoss(option='total'):
-    import pprint    
+def gen_nd_loss_csv(regs=regs, fn=None, stats="mean"):
+    if not fn: fn="tmp_"+stats+".csv"
+    from itertools import zip_longest
+    f = {"mean": lambda x: x.mean(),
+         "var": lambda x: x.var()
+    }[stats]
+    
+    lines = [["method"]+regs]
+    iterables = tuple(reportKL("result_"+reg, f=f)
+                      for reg in regs)
+    prevtag = "relevant"
+    count = 0
+    for items in zip_longest(*iterables):
+        tag = items[0][0]
+        if prevtag != tag:
+            count = 0
+            prevtag = tag
+        tag = tag + str(count)
+        lines.append([tag]+[str(l) for _,l in items])
+        count += 1
+    # print all these lines
+    with open(fn,'w') as f:
+        f.write("\n".join([",".join(l) for l in lines]))
+
+def gen_nd_weight_csv(regs=regs, fn=None):
+    if not fn: fn="tmp_weights.csv"
+    from itertools import zip_longest
+    f = lambda x: x.mean()
+
+    lines = [["method"]+regs]
+    iterables = tuple(reportTheta("result_"+reg, f=f)
+                      for reg in regs)
+    prevtag = "relevant"
+    count = 0
+    for items in zip_longest(*iterables):
+        tag = items[0][0]
+        if prevtag != tag:
+            count = 0
+            prevtag = tag
+        tag = tag + str(count)
+        lines.append([tag]+[str(l) for _,l in items])
+        count += 1
+    # print all these lines
+    with open(fn,'w') as f:
+        f.write("\n".join([",".join(l) for l in lines]))
+
+
+def reportNdLoss(regs=regs,tag=None):
+    if not tag: tagf=lambda x: True
+    else: tagf=lambda x: tag==x
     for reg in regs:
-        n = KLmetricUser("result_"+reg)
-        if option == 'total':
-            print(reg+":", sum(l for l,_,_,_,_ in n))
-        elif option == 'loss':
-            pprint.pprint([(reg, l, tag) for l,w,r,t,tag in n])    
+        g = reportKL("result_"+reg, f=lambda x:x.mean())
+        print(reg+":", sum(list(map(lambda x: x[1],
+                                    filter(lambda x: tagf(x[0]), g)))))
 

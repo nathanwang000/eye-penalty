@@ -40,15 +40,39 @@ properties of a credible model:
 a) credibility should not come at the cost of performance
 b) irrelevant features whether known or unknown should have low weights
 c) within a group of dependent features, known risk factors should be given more
-weights while weights in known risk factors should be dense
+weights and the their weights should be dense
 d) within a group of dependent features of all unknown risk factors, the weights
 should be sparse
 
 criteria a) are acheived by grid searching over validation set so that
 models in consideration has similar level of performance. b) is acheive by
-constraining on the size of parameters which all regularization does.
+constraining on the size of parameters which all regularizations do.
 
 For c) and d) we measure the KL divergence in each group of dependent features.
+
+Here I give a typical exmaples of what I mean by measuring KL divergence in a
+group of dependent features
+
+assume $r=[1,1,0,0]^T$ and $\theta=[0.1, 0.2, -0.01, 0.02]^T$ (\theta
+excluding b term), we first normalize each vector so that their $||\cdot||_1$
+is 1.
+
+$r'=[0.5, 0.5, 0, 0]^T$, $\theta' = [ 0.32258065,  0.64516129,  0.03225806,
+0.06451613]^T$
+
+To avoid 0 appearing in log of KL divergence calculation, a small smooth factor
+of 1e-6 is added to any vector with 0, renormalizing giving
+
+$r''=[  4.99999000e-01,   4.99999000e-01,   9.99996000e-07,
+         9.99996000e-07]^T$, $\theta'' = [ 0.32258065,  0.64516129,  0.03225806,
+0.06451613]^T$
+
+Then $KL(r''||\theta'')$ is the reported result in each dependent group,
+where $KL(x||y) = \sum_{i} p(x_i) \log \frac{p(x_i)}{p(y_i)}$
+
+In the case where r is all 0 in relevant feature group, I give
+$min_{v \in \textit{one hot vectors}} KL(v||\theta'')$ as a loss as to encourage
+sparse feature.
 
 * approaches taken
 
@@ -187,7 +211,7 @@ risk factor with constraint y \geq 0, x \geq 0.
 &\rightarrow 2 \beta y + (1-\beta) x^2 = \frac{\beta^2}{1-\beta}
 \end{align}
 
-Thus, we just need q(x) = \frac{\beta^2}{1-\beta}
+Thus, we just need q(x) = $\frac{\beta^2}{1-\beta}$
 
 **** properties:
 a) A is symmetric about origin (x \in A then -x \in A), so this is a norm
@@ -463,28 +487,47 @@ generate two datasets, one for training, one for validation
 normalize the data to 2 mean and 2 variance (validaton data is normalized
 using mean and variance for the training data)
 
-parameter search over the different hyperparams of the regularizers
+parameter search over the different hyperparams of the regularizers (each of the
+final candidate has loss around 0.083)
 
 for each regularizer, use the hyperparmeters that acheives the minimal loss
 
-repeat the following 100 times:
+repeat the following 10-20 times:
 
 generate data (detailed in nd data generation section), normalize data, run the selected regularizers, record \theta
 
 The choosing criteria is loss
 
-KL divergence with optimal:
+KL divergence metric filtering for relevant features:
 
-eye: 1.96333198572
+eye: 2.5722261048
 
-wlasso: 2.45327734993
+wlasso: 5.18104309657
 
-wridge: 6.42889655902
+wridge: 6.8364694347
 
-ridge: 9.81652952705
+lasso: 18.9613782735
 
-owl: 10.1766673789
+ridge: 12.7547711529
 
-lasso: 10.2680425337
+owl: 13.5265637342
 
-enet: 10.7163880506
+enet: 17.7231341012
+
+KL divergence metric including irrelevant features:
+
+eye: 13.1307145901
+
+wlasso: 7.55507729218
+
+wridge: 11.5881850514
+
+lasso: 31.1710069808
+
+ridge: 16.9635832109
+
+owl: 17.5479982613
+
+enet: 30.2439873411
+
+[[./klmetric.numbers][kl_metric_visual]] (generated using gen_result.py:gen_nd_loss_csv)
