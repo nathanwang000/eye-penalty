@@ -74,7 +74,7 @@ def plotBar(n_features, savefig=False):
 ################### for nd case #################
 from comb_loss import reportKL, reportTheta
 
-def gen_nd_loss_csv(regs=regs, fn=None, stats="mean"):
+def gen_nd_loss_csv(regs=regs, fn=None, stats="mean", method='kl'):
     if not fn: fn="tmp_"+stats+".csv"
     from itertools import zip_longest
     f = {"mean": lambda x: x.mean(),
@@ -82,7 +82,7 @@ def gen_nd_loss_csv(regs=regs, fn=None, stats="mean"):
     }[stats]
     
     lines = [["method"]+regs]
-    iterables = tuple(reportKL("result_"+reg, f=f)
+    iterables = tuple(reportKL("result_"+reg, f=f, method=method)
                       for reg in regs)
     prevtag = "relevant"
     count = 0
@@ -120,12 +120,35 @@ def gen_nd_weight_csv(regs=regs, fn=None):
     with open(fn,'w') as f:
         f.write("\n".join([",".join(l) for l in lines]))
 
+def gen_nd_weight_var_csv(regs=regs, fn=None,
+                          f=lambda x: x.mean(1).var()):
+    if not fn: fn="tmp_weights_var.csv"
+    from itertools import zip_longest
 
-def reportNdLoss(regs=regs,tag=None):
+    lines = [["method"]+regs]
+    iterables = tuple(reportTheta("result_"+reg, f=f)
+                      for reg in regs)
+    prevtag = "relevant"
+    count = 0
+    for items in zip_longest(*iterables):
+        tag = items[0][0]
+        if prevtag != tag:
+            count = 0
+            prevtag = tag
+        tag = tag + str(count)
+        lines.append([tag]+[str(l) for _,l in items])
+        count += 1
+    # print all these lines
+    with open(fn,'w') as f:
+        f.write("\n".join([",".join(l) for l in lines]))
+        
+
+def reportNdLoss(regs=regs,tag=None, method="kl"):
+    # method can be kl or emd
     if not tag: tagf=lambda x: True
     else: tagf=lambda x: tag==x
     for reg in regs:
-        g = reportKL("result_"+reg, f=lambda x:x.mean())
+        g = reportKL("result_"+reg, f=lambda x:x.mean(), method=method)
         print(reg+":", sum(list(map(lambda x: x[1],
                                     filter(lambda x: tagf(x[0]), g)))))
 

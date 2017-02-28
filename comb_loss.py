@@ -15,13 +15,12 @@ from convergeTrigger import ConvergeTrigger
 from sklearn.metrics import roc_auc_score, roc_curve
 import hashlib, pickle
 import itertools
+from pyemd import emd_with_flow
+from scipy.linalg import block_diag
 
 # todo
-# 1. develop a more general metric (weigh the general metric in naive kl metric)
-# 2. look for all unknown but different weight (balanced data)
-# 3. graph group_theta, the weight, and variances 
-# 4. extend risk to fractional
-# 5. generate data in a more diverse manner: eg. x3=h1+h2
+# 1. look for all unknown but different weight (balanced data)
+# 2. run 2 more experiments
 
 ############ utility functions ##################
 def l1norm(v):
@@ -127,17 +126,67 @@ niterations = 1000
 n = 100
 d = 2
 group_theta = np.ones(1000)[:,None]
-# np.array([
-#     5,  -5,  -8,   4,  -4,   1,  -3,  -1,   7,   1,   0, -10,  -8,
-#     -8,  -6,  -9,  -1,  -5,  -8, -10,  -8,  -3,  -1,   9,  -1,  -3,
-#     -10, -10,  -9,   3,  -6,   8,  -4,  -1,  -5,  -9,   8,   1,   4,
-#     0,   3,   0, -10,   3, -10,   1,   9,   4,   1,  -2,   8,   9,
-#     6,  -4,  -9,   5,   3,   9,  -8,  -6,  -6,  -2,   2,  -7,   2,
-#     2,   9,   6,   2,   4,   6,   4,   1,   0,  -7,  -3,   8,   8,
-#     -10,  -6,   2,   0,  -2, -10,  -8,  -9,   4,  -8, -10,  -4,   2,
-#     6,  -7,  -2,   5,   8,   2,  -9,   8,   3
-# ])[:,None]
 
+def genCovData(C=None, theta=None, n=n, dim=d):
+    # C is the covariance matrice (assume to be psd)
+    # y = Bernoulli(\theta x), z~Norm(0,I), x = Az
+    if C is None:
+        C = np.diag(np.ones(dim))
+    A = np.linalg.cholesky(C)
+    d, nc = A.shape
+    if theta is None:
+        theta = np.ones(d)            
+    assert d==theta.size, "size mismatch"
+    Z = np.random.randn(n, d)
+    X = Z.dot(A.T) # linearly separable
+    y = X.dot(theta) > 0
+    return X.astype(np.float32), y.astype(np.float32)
+
+def setupCovCorr():
+    # sweep correlation from 0 to 0.9, 1 case is shown in 2d
+    # fix r and theta, all relevant b/c irrelvant case
+    # is explored in the previous round
+    # evaluate by correlation weighted kl/emd metric
+    nrgroups = 10
+    pergroup = 4
+    rbase = np.zeros(pergroup)
+    rbase[:pergroup//2] = 1
+    r = np.concatenate([rbase for _ in range(nrgroups)])
+    correlations = [i/nrgroups for i in range(nrgroups)]
+
+    blocks = []
+    for c in correlations:
+        base = np.diag(np.ones(pergroup))        
+        base[base==0] = c
+        blocks.append(base)
+
+    C = block_diag(*blocks)
+    theta = np.ones(nrgroups*pergroup)
+    X, y = genCovData(C=C, theta=theta, n=2000)
+
+def setupCovR():
+    # sweep fractional r: fix correlation to 0.95, theta to 1
+    # todo
+    c = 0.99
+    # consider sigmoid, log, exp
+    def sigmoid_(a, x):
+        return 1/(1+e**(-a*x))
+    def exp_(a, x):
+        return np.exp(a*x) / np.max(np.exp(a*x))
+    def log_(a, x):
+        return np.log(a*x+1) / np.max(a*x+1)
+    pergroup = 10
+    alphas = [0.1,0.2,1,2,10]
+    C = block_diag()
+    theta = np.ones(nrgroups*pergroup)
+    X, y = genCovData(C=C, theta=theta, n=2000)
+    
+    
+def setupCovTheta():
+    # sweep theta in relevant all unknown to see sparseness
+    # todo
+    pass
+    
 def genPartitionData(n=n, nrgroups=11, nirgroups=11, pergroup=10,\
                      signoise=0.2, scaleh=2, munoise=0,\
                      left=-3, right=1,
@@ -528,8 +577,7 @@ def experimentNd(num_runs=10):
     # run(OWL(owl2, 0.001), outdir="result_owl")     
 
 ############# helpers
-def kl(p, q):
-    # calculate KL(p||q) = E(log p/q)
+def distribution_normalizer(p, q):
     # normalize p and q to abs, p,q are np array
     if np.abs(p).sum() == 0:
         pnorm = np.ones_like(p) / p.size
@@ -543,8 +591,23 @@ def kl(p, q):
         pnorm = (np.abs(pnorm)+smooth) / (np.abs(pnorm)+smooth).sum()
     if (qnorm == 0).sum() > 0:
         qnorm = (np.abs(qnorm)+smooth) / (np.abs(qnorm)+smooth).sum()
+    return pnorm, qnorm
+
+def kl(p, q):
+    # calculate KL(p||q) = E(log p/q)
+    pnorm, qnorm = distribution_normalizer(p, q)
     return (pnorm * np.log(pnorm) - pnorm * np.log(qnorm)).sum()
 
+def emd(p,q):
+    pnorm, qnorm = distribution_normalizer(p, q)
+    m, n = pnorm.size, qnorm.size
+    dist_matrix = np.zeros((m, n))
+    for i in range(m):
+        dist_matrix[i,:] = np.abs(range(-i, -i+n))
+    work, flow = emd_with_flow(pnorm.astype(np.float64),
+                               qnorm.astype(np.float64), dist_matrix)
+    return work
+    
 def knownRiskFactorReader(r, t, nrgroups, nirgroups, pergroup):
     # assume r is formulated such that nrgroups are first
     # and pergroup are together in r
@@ -562,13 +625,14 @@ def knownRiskFactorReader(r, t, nrgroups, nirgroups, pergroup):
             yield rout, tout, 'irrelevant'
         ptr_s += pergroup
 
-def naiveKLmetric(risk, theta, nrgroups, nirgroups, pergroup):
+def naiveKLmetric(risk, theta, nrgroups, nirgroups, pergroup, method="kl"):
     # not intended for client: for report use    
     # assume r is formulated such that nrgroups are first
     # and pergroup are together in r
     loss = 0
     g = knownRiskFactorReader(risk, theta,
                               nrgroups, nirgroups, pergroup)
+    metric = {"kl": kl, "emd": emd}[method]
     for r, t, tag in g:
         l =  0
         w = np.abs(t).sum() # weight for loss
@@ -576,13 +640,13 @@ def naiveKLmetric(risk, theta, nrgroups, nirgroups, pergroup):
             if np.all(r==0): # all unknown (want spike)
                 target = np.zeros_like(r)
                 target[0] = 1
-                l = min(kl(np.roll(target, i), t)
+                l = min(metric(np.roll(target, i), t)
                         for i in range(r.size))
             else: # has known
-                l = kl(r, t)
+                l = metric(r, t)
         elif tag == "irrelevant":
             target = np.ones_like(r)
-            l = kl(target, t)
+            l = metric(target, t)
         loss += l
         yield l,w,r,t,tag
     
@@ -592,7 +656,7 @@ def naiveKLmetric(risk, theta, nrgroups, nirgroups, pergroup):
     # each should be weighted against the true theta_i for each group
     return loss    
 
-def KLmetricUser(t):
+def KLmetricUser(t, method="kl"):
     # not intended for client: for internal report use
     nrgroups = 11
     nirgroups = nrgroups
@@ -604,15 +668,15 @@ def KLmetricUser(t):
     for i in range(0, nrvars//pergroup):
         r[(i*pergroup):(i*pergroup+i)] = 1
     r = np.concatenate((r,r))
-    n = naiveKLmetric(r, t, nrgroups, nirgroups, pergroup)    
+    n = naiveKLmetric(r, t, nrgroups, nirgroups, pergroup, method)    
     return n
 
-def reportKL(fn, f=lambda x: x.mean()):
+def reportKL(fn, f=lambda x: x.mean(), method="kl"):
     # report kl mean for each function
     t = np.load(os.path.join(fn, "theta.npy"))
     t = t[:,:-1] # exclude b
     n, d = t.shape
-    iterables = tuple(KLmetricUser(t[i]) for i in range(n))
+    iterables = tuple(KLmetricUser(t[i], method=method) for i in range(n))
     tagged_stats = []
     for items in itertools.zip_longest(*iterables):
         tag = items[0][4]
@@ -620,12 +684,12 @@ def reportKL(fn, f=lambda x: x.mean()):
         tagged_stats.append((tag, f(l)))
     return tagged_stats
 
-def reportTheta(fn, f=lambda x: x.mean()):
+def reportTheta(fn, f=lambda x: x.mean(), method="kl"):
     # report kl mean for each function
     t = np.load(os.path.join(fn, "theta.npy"))
     t = t[:,:-1] # exclude b
     n, d = t.shape
-    iterables = tuple(KLmetricUser(t[i]) for i in range(n))
+    iterables = tuple(KLmetricUser(t[i], method=method) for i in range(n))
     tagged_stats = []
     for items in itertools.zip_longest(*iterables):
         tag = items[0][4]

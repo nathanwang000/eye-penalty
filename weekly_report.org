@@ -1,5 +1,5 @@
 #+TITLE: Incorporating known risk factors into models
-#+DATE: <2017-02-14 Tue>
+#+DATE: <2017-02-23 Thursday>
 #+AUTHOR: Jiaxuan Wang
 #+EMAIL: jiaxuan@umich
 #+OPTIONS: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline author:t c:nil
@@ -39,8 +39,7 @@ properties of a credible model:
 
 a) credibility should not come at the cost of performance
 b) irrelevant features whether known or unknown should have low weights
-c) within a group of dependent features, known risk factors should be given more
-weights and the their weights should be dense
+c) within a group of dependent features, weights of known risk factors should be dense
 d) within a group of dependent features of all unknown risk factors, the weights
 should be sparse
 
@@ -115,13 +114,13 @@ n irrelevant group (nirgroups) = 11
 
 correlated variables pergroup (npergroup) = 10
 
-h_i = Uniform(-3, 1, n)
+h_i ~ Uniform(-3, 1, n)
 
-theta_i = 1
+\theta_i = 1 \forall i
 
 x_{i,j} ~ Uniform(1..2) h_i + N(0, 0.2) for i \in [n] for j \in [npergrop]
 
-y = \sum_{i=1}^{nrgroups} h_i \theta_i > -1
+y = $\frac{\sum_{i=1}^{nrgroups} h_i \theta_i}{\sum_{i=1}^{nrgroups} |\theta_i|}$ > -1
 
 r (known risk factors): for each correlated variable group, putting in one
 more known risk factor than the previous group
@@ -479,7 +478,7 @@ factor (l1 ratio is 1), so it only regularizes x_1 not x_0
 
 [[./figures/main_players_x1.png]]
 
-*** fifth run (nd data)
+*** fifth run (nd data, sweep r, fix correlation of 0.04, fix theta to 1)
 b unregularized
 
 generate two datasets, one for training, one for validation
@@ -530,4 +529,44 @@ owl: 17.5479982613
 
 enet: 30.2439873411
 
-[[./klmetric.numbers][kl_metric_visual]] (generated using gen_result.py:gen_nd_loss_csv)
+[[./klmetric.numbers][kl/emd_metric_visual]] (generated using gen_result.py:gen_nd_loss_csv)
+
+
+* issues encountered
+the validation sweep tend to pick very small regularization which essentially
+unconstrained (maybe increase the noise could help?)
+
+* TODO sixth run (sweep corelation, fix r, fix theta to 1)
+
+* TODO seventh run (sweep fractional r, fix correlation, fix theta)
+
+* TODO eighth run (sweep theta, fix r, fix correlation)
+
+* next
+1. develop a more general metric (related to 4, earth mover distance)
+2. look for all unknown but different weights (balanced data) (ok via 4)
+3. extend risk to fractional (just sweep with fractional r) (ok)
+4. generate data in a more diverse manner: with correlation matrix (ok)
+
+|   1 | 0.5 |     |     |     |
+| 0.5 |   1 |     |     |     |
+|     |     |   1 | 0.1 | 0.2 |
+|     |     | 0.1 |   1 |   0 |
+|     |     | 0.2 |   0 |   1 |
+* plan
+
+think about last round of experiements:
+1. report p value of credibility (just look at 100 run and do a p test)
+2. report a good metric
+3. write a convincing story (3 days, maybe just the slides of what I think is important)
+
+read papers!
+
+* terminology
+1) shrinkage statistics: The term relates to the notion that the improved
+   estimate is made closer to the value supplied by the 'other information' than
+   the raw estimate.
+   + For example, the wildly popular Lasso/L1 regularization approach to 
+regression [28] is equivalent to maximum a posteriori (MAP) estimation under a
+Gaussian linear regression model having a double exponential (Laplace) prior on
+the coefficients.
