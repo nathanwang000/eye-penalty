@@ -130,57 +130,65 @@ group_theta = np.ones(1000)[:,None]
 def genCovData(C=None, theta=None, n=n, dim=d):
     # C is the covariance matrice (assume to be psd)
     # y = Bernoulli(\theta x), z~Norm(0,I), x = Az
+    noise = np.random.randn(n)  * 5
     if C is None:
         C = np.diag(np.ones(dim))
     A = np.linalg.cholesky(C)
     d, nc = A.shape
     if theta is None:
-        theta = np.ones(d)            
+        theta = np.ones((d,1))         
     assert d==theta.size, "size mismatch"
     Z = np.random.randn(n, d)
     X = Z.dot(A.T) # linearly separable
-    y = X.dot(theta) > 0
+    y = (X.dot(theta) + noise > 0).reshape(n,1)
     return X.astype(np.float32), y.astype(np.float32)
 
-def setupCovCorr():
-    # sweep correlation from 0 to 0.9, 1 case is shown in 2d
-    # fix r and theta, all relevant b/c irrelvant case
-    # is explored in the previous round
-    # evaluate by correlation weighted kl/emd metric
-    nrgroups = 10
-    pergroup = 4
-    rbase = np.zeros(pergroup)
-    rbase[:pergroup//2] = 1
-    r = np.concatenate([rbase for _ in range(nrgroups)])
-    correlations = [i/nrgroups for i in range(nrgroups)]
-
-    blocks = []
-    for c in correlations:
-        base = np.diag(np.ones(pergroup))        
-        base[base==0] = c
-        blocks.append(base)
-
-    C = block_diag(*blocks)
-    theta = np.ones(nrgroups*pergroup)
-    X, y = genCovData(C=C, theta=theta, n=2000)
-
 def setupCovR():
-    # sweep fractional r: fix correlation to 0.95, theta to 1
-    # todo
-    c = 0.99
+    # sweep fractional r: fix correlation to 0.99, theta to 1
+    c = 0.99 
     # consider sigmoid, log, exp
-    def sigmoid_(a, x):
-        return 1/(1+e**(-a*x))
-    def exp_(a, x):
-        return np.exp(a*x) / np.max(np.exp(a*x))
-    def log_(a, x):
-        return np.log(a*x+1) / np.max(a*x+1)
+    def clip_(f):
+        def f_(a, n):
+            res = f(a, n)
+            m, M = np.min(res), np.max(res)
+            return (res-m) / (M-m)
+        return f_
+    @clip_
+    def sigmoid_(a, n):
+        x = np.linspace(-1,1,n)
+        return 1/(1+np.exp(-a*x))
+    @clip_
+    def exp_(a, n):
+        x = np.linspace(-1,1,n)
+        return np.exp(a*x)
+    @clip_
+    def log_(a, n):
+        a = 30 * a
+        x = np.linspace(0,1,n)
+        return np.log(a*x+1)
+    funcs = {
+        sigmoid_,
+        exp_,
+        log_
+    }
     pergroup = 10
-    alphas = [0.1,0.2,1,2,10]
-    C = block_diag()
+    alphas = [1,3,6,10] 
+    nrgroups = len(alphas) * len(funcs)
+
+    r = np.ones(nrgroups * pergroup)
+    rindex = 0
+    for f in funcs:
+        for a in alphas:
+            r[rindex:rindex+pergroup] = f(a, pergroup)
+            rindex += pergroup
+
+    base = np.diag(np.ones(pergroup))        
+    base[base==0] = c
+    C = block_diag(*([base]*nrgroups))
+    # actually relvant or not are given by theta    
     theta = np.ones(nrgroups*pergroup)
     X, y = genCovData(C=C, theta=theta, n=2000)
-    
+    return X, y
     
 def setupCovTheta():
     # sweep theta in relevant all unknown to see sparseness
@@ -306,11 +314,21 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
     print(outdir)
     thetas = []
 
+    # open dir to see from log? to start
+    namebase = 0
+    if resume and os.path.exists(outdir):
+        for fn in os.listdir(outdir):
+            if fn.startswith("log_"):
+                number = int(fn[4:])
+                if number >= namebase:
+                    namebase = number+1
+    
     for i in range(num_runs):
         X, y = datagen()
         Xval, yval = datagen()
         if printreport:
             print("percentage of ones:", y.mean())
+            
         # preprocess
         normalize = normalizer()
         X = normalize(X)
@@ -328,7 +346,8 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
         updater = training.StandardUpdater(train_iter, optimizer)
         trainer = training.Trainer(updater, (niterations, 'epoch'),
                                    out=outdir)
-        trainer.extend(extensions.LogReport(log_name="log_"+str(i)))
+        logname = "log_"+str(namebase+i)
+        trainer.extend(extensions.LogReport(log_name=logname))
         if printreport:
             # validate
             test_iter = iterators.SerialIterator\
@@ -341,9 +360,9 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
                                                    'main/penalty',
                                                    'validation/main/loss',
                                                    'main/loss']))
-            
+
         try:
-            trainer.run()
+            trainer.run()            
             should_break=False
         except:
             should_break=True
@@ -360,10 +379,11 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
         thetas.append(theta.data)
 
         if should_break: break
-        
-    if resume and os.path.isfile("theta.npy"):
-        thetas = np.vstack((np.load("theta.npy"), np.array(thetas)))
-    np.save(os.path.join(outdir, "theta"), np.array(thetas))
+
+    thetafn = os.path.join(outdir, "theta.npy")        
+    if resume and os.path.isfile(thetafn):
+        thetas = np.vstack((np.load(thetafn), np.array(thetas)))
+    np.save(thetafn, np.array(thetas))
     
 
 ################# set up for known ###########
@@ -518,6 +538,197 @@ def paramsSearchNd():
             trainer.extend(extensions.Evaluator(test_iter, model))
             trainer.extend(extensions.LogReport(log_name="log"))
             trainer.run()
+
+def paramsSearchCov():
+    nrgroups = 10
+    pergroup = 4
+    rbase = np.zeros(pergroup)
+    rbase[:pergroup//2] = 1
+    r = np.concatenate([rbase for _ in range(nrgroups)])
+    correlations = [i/nrgroups for i in range(nrgroups)]
+
+    blocks = []
+    for c in correlations:
+        base = np.diag(np.ones(pergroup))        
+        base[base==0] = c
+        blocks.append(base)
+
+    C = block_diag(*blocks)
+    theta = np.ones(nrgroups*pergroup)
+
+    n = 2000
+    Xtrain, ytrain = genCovData(C=C, theta=theta, n=n)
+    Xval, yval = genCovData(C=C, theta=theta, n=n)    
+    
+    # preprocessing
+    normalize = normalizer()
+    Xtrain = normalize(Xtrain)
+    Xval = normalize(Xval, train=False)    
+    # train model and choose parameter based on performance on
+    # validation data
+    w1 = 2-r
+    owl1 = np.arange(r.size) # polytope
+    owl2 = np.zeros(r.size)  # inf norm
+    owl2[0] = 1
+    params_cand = {
+        'lasso': (lasso, (1e-2, 5e-3, 1e-3, 5e-4)),
+        'ridge': (ridge, (1e-2, 5e-3, 1e-3, 5e-4)),
+        'enet': (enet, (1e-2, 5e-3, 1e-3, 5e-4),
+                 tuple(i/10 for i in range(1,10))),
+        'eye': (eye, (r,), (1e-2, 5e-3, 1e-3, 5e-4)),
+        'wlasso': (weightedLasso, (w1,),
+                   (1e-2, 5e-3, 1e-3, 5e-4)),
+        'wridge': (weightedRidge, (w1,),
+                   (1e-2, 5e-3, 1e-3, 5e-4)),
+        'owl': (OWL, (owl1, owl2),
+                (1e-2, 5e-3, 1e-3, 5e-4))
+    }
+
+    hash_map = {}
+    for method in params_cand:
+        m = params_cand[method]
+        f, args = m[0], m[1:]
+        for arg in product(*args):
+            arghash = hashlib.md5(str(arg).encode()).hexdigest()
+            hash_map[arghash] = arg
+            pickle.dump(hash_map, open("val/hashmap","wb"))
+            outdir = "val/" + method + "(" + arghash
+            print(outdir)
+            reg = f(*arg)
+            # train
+            model = Regresser(Predictor(1),
+                              lossfun=lossfun,
+                              regularizer=reg)
+            optimizer = optimizers.AdaDelta()
+            optimizer.setup(model)
+            train_iter = iterators.SerialIterator\
+                         (TupleDataset(Xtrain,ytrain),
+                          batch_size=100,
+                          shuffle=False)
+            updater = training.StandardUpdater(train_iter,
+                                               optimizer)
+            trainer = training.Trainer(updater, (niterations,
+                                                 'epoch'),
+                                       out=outdir)
+            # validate
+            test_iter = iterators.SerialIterator\
+                        (TupleDataset(Xval,yval),
+                         batch_size=100,
+                         repeat=False,
+                         shuffle=False)
+            trainer.extend(extensions.Evaluator(test_iter, model))
+            trainer.extend(extensions.LogReport(log_name="log"))
+            trainer.run()
+
+def paramsSearchR():
+    # sweep fractional r: fix correlation to 0.99, theta to 1
+    c = 0.99 
+    # consider sigmoid, log, exp
+    def clip_(f):
+        def f_(a, n):
+            res = f(a, n)
+            m, M = np.min(res), np.max(res)
+            return (res-m) / (M-m)
+        return f_
+    @clip_
+    def sigmoid_(a, n):
+        x = np.linspace(-1,1,n)
+        return 1/(1+np.exp(-a*x))
+    @clip_
+    def exp_(a, n):
+        x = np.linspace(-1,1,n)
+        return np.exp(a*x)
+    @clip_
+    def log_(a, n):
+        a = 30 * a
+        x = np.linspace(0,1,n)
+        return np.log(a*x+1)
+    funcs = {
+        sigmoid_,
+        exp_,
+        log_
+    }
+    pergroup = 10
+    alphas = [1,3,6,10] 
+    nrgroups = len(alphas) * len(funcs)
+
+    r = np.ones(nrgroups * pergroup)
+    rindex = 0
+    for f in funcs:
+        for a in alphas:
+            r[rindex:rindex+pergroup] = f(a, pergroup)
+            rindex += pergroup
+
+    base = np.diag(np.ones(pergroup))        
+    base[base==0] = c
+    C = block_diag(*([base]*nrgroups))
+    # actually relvant or not are given by theta
+    theta = np.ones(nrgroups*pergroup)
+    
+    n = 2000
+    Xtrain, ytrain = genCovData(C=C, theta=theta, n=n)
+    Xval, yval = genCovData(C=C, theta=theta, n=n)    
+    
+    # preprocessing
+    normalize = normalizer()
+    Xtrain = normalize(Xtrain)
+    Xval = normalize(Xval, train=False)    
+    # train model and choose parameter based on performance on
+    # validation data
+    w1 = 2-r
+    owl1 = np.arange(r.size) # polytope
+    owl2 = np.zeros(r.size)  # inf norm
+    owl2[0] = 1
+    params_cand = {
+        'lasso': (lasso, (1e-2, 5e-3, 1e-3, 5e-4)),
+        'ridge': (ridge, (1e-2, 5e-3, 1e-3, 5e-4)),
+        'enet': (enet, (1e-2, 5e-3, 1e-3, 5e-4),
+                 tuple(i/10 for i in range(1,10))),
+        'eye': (eye, (r,), (1e-2, 5e-3, 1e-3, 5e-4)),
+        'wlasso': (weightedLasso, (w1,),
+                   (1e-2, 5e-3, 1e-3, 5e-4)),
+        'wridge': (weightedRidge, (w1,),
+                   (1e-2, 5e-3, 1e-3, 5e-4)),
+        'owl': (OWL, (owl1, owl2),
+                (1e-2, 5e-3, 1e-3, 5e-4))
+    }
+
+    hash_map = {}
+    for method in params_cand:
+        m = params_cand[method]
+        f, args = m[0], m[1:]
+        for arg in product(*args):
+            arghash = hashlib.md5(str(arg).encode()).hexdigest()
+            hash_map[arghash] = arg
+            pickle.dump(hash_map, open("val/hashmap","wb"))
+            outdir = "val/" + method + "(" + arghash
+            print(outdir)
+            reg = f(*arg)
+            # train
+            model = Regresser(Predictor(1),
+                              lossfun=lossfun,
+                              regularizer=reg)
+            optimizer = optimizers.AdaDelta()
+            optimizer.setup(model)
+            train_iter = iterators.SerialIterator\
+                         (TupleDataset(Xtrain,ytrain),
+                          batch_size=100,
+                          shuffle=False)
+            updater = training.StandardUpdater(train_iter,
+                                               optimizer)
+            trainer = training.Trainer(updater, (niterations,
+                                                 'epoch'),
+                                       out=outdir)
+            # validate
+            test_iter = iterators.SerialIterator\
+                        (TupleDataset(Xval,yval),
+                         batch_size=100,
+                         repeat=False,
+                         shuffle=False)
+            trainer.extend(extensions.Evaluator(test_iter, model))
+            trainer.extend(extensions.LogReport(log_name="log"))
+            trainer.run()
+            
             
 ############ set up regularizers #############
 
@@ -539,7 +750,6 @@ def experiment2d(num_runs=100):
                  "result_wlasso")
     run(weightedRidge(array([ 1.,  2.]), 0.01), 
                  "result_wridge")
-
 
 def experimentNd(num_runs=10):
     nrgroups = 11
@@ -568,14 +778,133 @@ def experimentNd(num_runs=10):
         return _f
     run = run_with_reg_wrapper(num_runs, datagen)    
     # run
-    run(eye(r, 0.01), outdir="result_eye")
-    # run(enet(0.001, 0.4), outdir="result_enet")
-    # run(lasso(0.001), outdir="result_lasso")
-    # run(ridge(0.001), outdir="result_ridge")
-    # run(weightedLasso(w1, 0.01), outdir="result_wlasso")
-    # run(weightedRidge(w1, 0.01), outdir="result_wridge")
-    # run(OWL(owl2, 0.001), outdir="result_owl")     
+    run(eye(r, 0.05), outdir="result_eye")
+    run(enet(0.01, 0.1), outdir="result_enet")
+    run(lasso(0.0005), outdir="result_lasso")
+    run(ridge(0.01), outdir="result_ridge")
+    run(weightedLasso(w1, 0.005), outdir="result_wlasso")
+    run(weightedRidge(w1, 0.01), outdir="result_wridge")
+    run(OWL(owl1, 0.001), outdir="result_owl")
+    
+def experimentNdCov(num_runs=10):
+    # sweep correlation from 0 to 0.9, 1 case is shown in 2d
+    # fix r and theta, all relevant b/c irrelvant case
+    # is explored in the previous round
+    # evaluate by correlation weighted kl/emd metric
+    nrgroups = 10
+    pergroup = 4
+    rbase = np.zeros(pergroup)
+    rbase[:pergroup//2] = 1
+    r = np.concatenate([rbase for _ in range(nrgroups)])
+    correlations = [i/nrgroups for i in range(nrgroups)]
 
+    blocks = []
+    for c in correlations:
+        base = np.diag(np.ones(pergroup))        
+        base[base==0] = c
+        blocks.append(base)
+
+    n = 2000
+    C = block_diag(*blocks)
+    theta = np.ones(nrgroups*pergroup)
+    X, y = genCovData(C=C, theta=theta, n=n)
+
+    w1 = 2-r
+    owl1 = np.arange(r.size) # polytope
+    owl2 = np.zeros(r.size)  # inf norm
+    owl2[0] = 1
+    # gen data
+    datagen = lambda: genCovData(C=C, theta=theta, n=n)
+
+    def run_with_reg_wrapper(datagen):
+        def _f(*args,**kwargs):
+            return run_with_reg(*args, **kwargs,
+                                datagen=datagen,
+                                num_runs=num_runs,
+                                resume=True)
+        return _f
+    run = run_with_reg_wrapper(datagen)    
+    # run
+    run(eye(r, 0.05), outdir="result_eye")
+    run(enet(0.01, 0.1), outdir="result_enet")
+    run(lasso(0.0005), outdir="result_lasso")
+    run(ridge(0.01), outdir="result_ridge")
+    run(weightedLasso(w1, 0.005), outdir="result_wlasso")
+    run(weightedRidge(w1, 0.01), outdir="result_wridge")
+    run(OWL(owl1, 0.001), outdir="result_owl")     
+
+def experimentNdR():
+    # sweep fractional r: fix correlation to 0.99, theta to 1
+    c = 0.99 
+    # consider sigmoid, log, exp
+    def clip_(f):
+        def f_(a, n):
+            res = f(a, n)
+            m, M = np.min(res), np.max(res)
+            return (res-m) / (M-m)
+        return f_
+    @clip_
+    def sigmoid_(a, n):
+        x = np.linspace(-1,1,n)
+        return 1/(1+np.exp(-a*x))
+    @clip_
+    def exp_(a, n):
+        x = np.linspace(-1,1,n)
+        return np.exp(a*x)
+    @clip_
+    def log_(a, n):
+        a = 30 * a
+        x = np.linspace(0,1,n)
+        return np.log(a*x+1)
+    funcs = {
+        sigmoid_,
+        exp_,
+        log_
+    }
+    pergroup = 10
+    alphas = [1,3,6,10] 
+    nrgroups = len(alphas) * len(funcs)
+
+    r = np.ones(nrgroups * pergroup)
+    rindex = 0
+    for f in funcs:
+        for a in alphas:
+            r[rindex:rindex+pergroup] = f(a, pergroup)
+            rindex += pergroup
+
+    base = np.diag(np.ones(pergroup))        
+    base[base==0] = c
+    C = block_diag(*([base]*nrgroups))
+    # actually relvant or not are given by theta
+    theta = np.ones(nrgroups*pergroup)
+    
+    n = 2000
+    X, y = genCovData(C=C, theta=theta, n=n)
+
+    w1 = 2-r
+    owl1 = np.arange(r.size) # polytope
+    owl2 = np.zeros(r.size)  # inf norm
+    owl2[0] = 1
+    # gen data
+    datagen = lambda: genCovData(C=C, theta=theta, n=n)
+
+    def run_with_reg_wrapper(datagen):
+        def _f(*args,**kwargs):
+            return run_with_reg(*args, **kwargs,
+                                datagen=datagen,
+                                num_runs=num_runs,
+                                resume=True)
+        return _f
+    run = run_with_reg_wrapper(datagen)    
+    # run
+    run(eye(r, 0.05), outdir="result_eye")
+    run(enet(0.01, 0.1), outdir="result_enet")
+    run(lasso(0.0005), outdir="result_lasso")
+    run(ridge(0.01), outdir="result_ridge")
+    run(weightedLasso(w1, 0.005), outdir="result_wlasso")
+    run(weightedRidge(w1, 0.01), outdir="result_wridge")
+    run(OWL(owl1, 0.001), outdir="result_owl")     
+    
 ############# helpers
 def distribution_normalizer(p, q):
     # normalize p and q to abs, p,q are np array
@@ -699,24 +1028,60 @@ def reportTheta(fn, f=lambda x: x.mean(), method="kl"):
 
 #------------temporary function###################
 def tmp():
-    nrgroups = 11
-    nirgroups = nrgroups
+    # sweep fractional r: fix correlation to 0.99, theta to 1
+    c = 0.99 
+    # consider sigmoid, log, exp
+    def clip_(f):
+        def f_(a, n):
+            res = f(a, n)
+            m, M = np.min(res), np.max(res)
+            return (res-m) / (M-m)
+        return f_
+    @clip_
+    def sigmoid_(a, n):
+        x = np.linspace(-1,1,n)
+        return 1/(1+np.exp(-a*x))
+    @clip_
+    def exp_(a, n):
+        x = np.linspace(-1,1,n)
+        return np.exp(a*x)
+    @clip_
+    def log_(a, n):
+        a = 30 * a
+        x = np.linspace(0,1,n)
+        return np.log(a*x+1)
+    funcs = {
+        sigmoid_,
+        exp_,
+        log_
+    }
     pergroup = 10
-    n = 5000
-    # construct known and unknown variables
-    nrvars = nrgroups * pergroup
-    r = np.zeros(nrvars)
-    for i in range(0, nrvars//pergroup):
-        r[(i*pergroup):(i*pergroup+i)] = 1
-    r = np.concatenate((r,r))
+    alphas = [1,3,6,10] 
+    nrgroups = len(alphas) * len(funcs)
+
+    r = np.ones(nrgroups * pergroup)
+    rindex = 0
+    for f in funcs:
+        for a in alphas:
+            r[rindex:rindex+pergroup] = f(a, pergroup)
+            rindex += pergroup
+
+    base = np.diag(np.ones(pergroup))        
+    base[base==0] = c
+    C = block_diag(*([base]*nrgroups))
+
+    # actually relvant or not are given by theta
+    n=2000
+    theta = np.ones(nrgroups*pergroup)
+    X, y = genCovData(C=C, theta=theta, n=n)
+
     w1 = 2-r
     owl1 = np.arange(r.size) # polytope
     owl2 = np.zeros(r.size)  # inf norm
     owl2[0] = 1
     # gen data
-    datagen = lambda: genPartitionData(nrgroups=nrgroups,
-                                       nirgroups=nirgroups,
-                                       pergroup=pergroup,n=n)
+    datagen = lambda: genCovData(C=C, theta=theta, n=n)
+
     def run_with_reg_wrapper(datagen):
         def _f(*args,**kwargs):
             return run_with_reg(*args, **kwargs,
@@ -726,3 +1091,4 @@ def tmp():
         return _f
     run = run_with_reg_wrapper(datagen)    
     return run, r
+    

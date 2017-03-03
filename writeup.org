@@ -1,5 +1,5 @@
 #+TITLE: Building Trustworty Models (Draft)
-#+DATE: <2017-02-27 Monday>
+#+DATE: <2017-02-28 Tuesday>
 #+AUTHOR: Jiaxuan Wang
 #+EMAIL: jiaxuan@umich
 #+OPTIONS: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline author:t c:nil
@@ -12,7 +12,8 @@
 #+KEYWORDS:
 #+LANGUAGE: en
 #+SELECT_TAGS: export
-
+#+LATEX_HEADER: \usepackage{bbm} 
+#+LATEX_HEADER: \usepackage{amsthm}
 
 The motivation is modified based on the motivation section from Lauren Naylor's
 original writeup. 
@@ -42,13 +43,12 @@ that is known to be relevant is correlated with a feature that is not, the model
 may use the latter feature to make predictions and discard the former.
 
 This example suggests that in addition to interpretability, we also want the
-model to be credible, that is to agree with prior knowledge in the
-field under the constraint that the performance is not worsend. Note that the
-constraint is important because we still need our model to be consistent with
-data so that the model is useful.
+model to be credible, that is to agree with prior knowledge in the field without
+lowering performance. Note that maintaining performance is important because
+that's what makes the model useful.
 
-Maintaining performance while increasing credibility may sound too good to be
-true: isn't everything come with a cost? Given we already have an accurate
+It may sound too good to be true that there's no tradoff between performance and
+credibility: isn't everything come with a cost? Given we already have an accurate
 model, what credibility does is to filter the reality through a particular point
 of view and the cost we pay is just providing this viewing lens, which in the
 medical context is the known risk factors. To illustrate this point, consider an
@@ -63,8 +63,7 @@ number of people drown (the two features are correlated). The learned model is
 obviously as accurate as the one only using season, but the fact that the
 model is not aware of the thinking mode of human makes its reasoning cryptic,
 which can be easily fixed by providing the model with proper knowledge. Thus, this
-seemingly free lunch property is obtained by leveraging domain knowledge, which
-in most cases is easy to obtain. 
+seemingly free lunch property is obtained by leveraging domain knowledge. 
 
 It should be noted that credibility implies interpretability, but the inverse is
 not true. 
@@ -77,24 +76,23 @@ acquiring an infection with C. difficile.
 
 * objective
 
-Incorporating known risk factors with unknown risk factors in predicting outcome. 
-In the case of choosing between correlated variables, the model should favor
-known risk factors.
+We want to incorporate known risk factors into models such that they favor known
+risk factors over unknown features when these features are correlated.
 
 * related work
 
-Credibility and interpretability is usually acheived through feature selection,
-which can be further breakdown to subset selection, shrinkage, and dimension
-reduction cite:zou2006adaptive. Subset selection selects subset of features so that
-when the model is trained on this subset, the tradeoff between model simplicity
-and increase in loss is balanced. This class of methods include best subset
-selection and its computationally efficient variant stepwise
+Credibility and interpretability are usually approached through feature
+selection, which can be further breakdown into subset selection, shrinkage, and
+dimension reduction cite:zou2006adaptive. Subset selection selects subset of
+features so that when the model is trained on this subset, the tradeoff between
+model simplicity and increase in loss is balanced. This class of methods include
+best subset selection and its computationally efficient variant stepwise
 selection. Shrinkage methods refer to regularization, which is penalty added on
-the size of model parameters. This is the most often used methods for feature
-selection due to its non-intrusive nature concerning training
-pipeline. Dimension reduction methods try to learn the true dimension of the
-data so that noise is minimized and correlation is removed. Example methods
-include PCA and ICA. In this work, we focus on regularization methods.
+the size of model parameters. This is the most oftenly used class of methods due
+to its non-intrusiveness regarding training pipeline. Dimension reduction
+methods try to learn the true dimension of the data so that noise is minimized
+and correlation is removed. Example methods include PCA and ICA. In this work,
+we focus on regularization methods.
 
 The most commonly used and analyzed regularizations are $L_1$ (lasso) and $L_2$
 (ridge) norm due to their desirable statistical properties. Each of which can be
@@ -106,13 +104,13 @@ ordered weighted loss (OWL) cite:owl, adaptive lasso cite:zou2006adaptive,
 elastic net cite:zou2005regularization, and weighted lasso. While OWL, elastic
 net, and weighted lasso are generalizations of lasso, adaptive lasso satisfies
 the oracle property in the sense that under mild regularity conditions, it
-identifies the right subset model and is consistent with true parameter (that is
+identifies the right subset model and is consistent with true parameters (that is
 converge in distribution to the true underlying feature weights). However,
-adaptive lasso requires learning another model to set its weight, which makes it
+adaptive lasso requires learning another model to set its weight, making it
 more cubersome to use than others.
 
 The most natural extension over the regular lasso penalty is the weighted lasso,
-which introduces a weight $w_i$ for each feature: $\lambda \sum{i=1}^n
+which introduces a weight $w_i$ for each feature: $\lambda \sum_{i=1}^n
 w_i |\theta_i|$. This penalty is used in [[{need%20to%20cite%209}][cite:liu2016transferring]] where the feature's
 weight is the inverse of its relevance. This approach causes the weights of less
 relevant features correlated with more relevant features to be driven to
@@ -139,23 +137,22 @@ so that the known risk factors are merely suggestions for the model to consider
 instead of forced constraints. We call a model credible if it satisfies the
 following properties:
 
-1) credibility should not come at the cost of performance
+1) the performance is comparable with the best model 
 2) irrelevant features whether known or unknown should have low weights
 3) within a group of dependent features, weights of known risk factors should be
    dense
 4) within a group of dependent features of all unknown risk factors, the weights
    should be sparse
 
-criteria 1) are acheived by grid searching over validation set so that
+Criteria 1) is acheived by grid searching over the validation set so that
 models in consideration have similar level of performance. 2) is acheive by
 constraining on the size of parameters which all regularizations do.
 
 For 3) and 4) we measure the distance in distribution between each group of
 correlated features and the known risk factor indicator vector within that
-group. The metrics used for the correlated feature group space are KL divergence and
-earth mover's distance. Earth mover's distance measures the amount of work to
-turn one distribution to the other and is symmetric, while KL divergence is
-asymmetric in its argument. 
+group. The metrics used are KL divergence and earth mover's distance. Earth
+mover's distance measures the amount of work to turn one distribution to the
+other and is symmetric, while KL divergence is asymmetric in its arguments.
 
 Here I give an exmaple of what I mean by measuring KL divergence in a
 group of dependent features.
@@ -200,25 +197,26 @@ the contour of this penalty:
 
 As the contour plot suggests, this penalty function is nonhomogeneous:
 that is $f(tx) \neq |t|f(x)$. In the case of perfectly correlated variables,
-this translate to sensitivity to $\alpha$: small $\alpha$ will let the model
+this translate to model's sensitivity to $\alpha$: small $\alpha$ will let the model
 favor unknown risk factor y which is opposite to what we want.
 
 To address this issue, we propose eye penalty which is obtained by fixing a
 convex body in the contour of pena and scale it for different contour levels. We
-call the fixed contour as the generating convex body. The generating convex body
-are chosen by constraining the slope at the right end point in the cross section
-between known and unknown risk factors to be -1, which forces perfectly
-correlated features to favor known risk factors.
+call the fixed contour the generating convex body. Consider the corners of the
+cross section between the known and unknown risk factors, we want the corners to
+have slope of magnitude 1 so that perfectly correlated features will favor known
+risk factors. The generating convex body is exactly determined via this
+criteria. The contour plot for the 2 dimensional case is again plotted.
 
 [[./contour/eye.png]]
 
-The new contour plot demonstrate that this new penalty term is homogeneous.
+The new contour plot demonstrates that eye penalty is indeed homogeneous.
 
-A derivation of this penalty and the proof of its properties can be found in the
-last section. Here I simply state the result:
+While a derivation of this penalty and the proof of its properties can be found in the
+last section ref:eye_properties, I state the result:
 
 ** formal definition of eye penalty
-
+   
 $q(x) = 2 \beta ||(1-r) \odot x||_1 + 
 (1-\beta) ||r \odot x||_2^2$
 
@@ -233,24 +231,50 @@ $eye(x) = \alpha \inf\{t>0|x \in t\{ x | q(x) = \frac{\beta^2}{1-\beta}\}\}$
 
 * TODO experiments
   
-  Each experiment is ran with different aim in mind. The first four experiments
-  explore 2d data while the last four experiments explore high dimensional
-  data. The last experiments applies eye penalty to C. difficile prediction.
+  Each experiment was ran with a different aim in mind. The first four
+  experiments explore 2d data while the last four experiments explore high
+  dimensional data. The last experiments applies eye penalty to C. difficile
+  prediction.
 
-** generating data
-*** 2d data generation
+** 1_st run (regularized b)
 
+2 variables: x_0 known, x_1 unknown
+
+b regularized
+
+fix hyperparmeters to predefined value
+
+repeat the following 100 times:
+
+generate data, run the selected regularizers, record \theta
+
+[[./old_figures/run1_x0.png]]
+
+Note here the axes are wrongly labled. The y axis should be number count and x
+axis be weight.
+
+[[./old_figures/run1_x1.png]]
+
+[[./old_figures/run1_b.png]]
+
+[[./old_figures/run1_avg.png]]
+
+This experiment clearly shows that lasso is able to drive unknown factor to 0 in
+the unnormalized case (since x_1 = 2 x_0, x_1 indeed get all the zero)
+
+The flaw in this run is the lack of a validation set to set hyperparameters,
+which is addressed in second run ref:run2.
+
+*** data gen
 Data n = 100:
-
-[[./figures/data.png]]
 
 h = linspace(-2.5, 1, n)
 
-x_0 ~ Uniform(1..4) h + N(0, 0.2)
+$x_0 \sim h$
 
-x_1 ~ Uniform(1..4) h + N(0, 0.2)
+$x_1 \sim 2 h$
 
-y = h > 0.5
+$y = h > 0.5$
 
 r (known risk factors) = [1, 0]
 
@@ -260,87 +284,15 @@ Optimizer: AdaDelta
 
 Number of Epoch: 1000
 
-Regulizers: elastic net, lasso, ridge, OWL, weighted lasso, weighted ridge,
-penalty, eye penalty
+Regulizers: elastic net, lasso, ridge, penalty
 
-*** nd highly correlated data generation (genPartitionData)
+** 2_nd run (unregularized b, validation) label:run2
 
-Data n = 5000
-
-n relevant groups (nrgroups) = 11
-
-n irrelevant group (nirgroups) = 11
-
-correlated variables pergroup (npergroup) = 10
-
-h_i ~ Uniform(-3, 1, n)
-
-\theta_i = 1 \forall i
-
-x_{i,j} ~ Uniform(1..2) h_i + N(0, 0.2) for i \in [n] for j \in [npergrop]
-
-y = $\frac{\sum_{i=1}^{nrgroups} h_i \theta_i}{\sum_{i=1}^{nrgroups} |\theta_i|}$ > -1
-
-r (known risk factors): for each correlated variable group, putting in one
-more known risk factor than the previous group
-
-Loss function is the negative loss likelihood of the logistic regression model.
-
-Optimizer: AdaDelta
-
-Number of Epoch: 1000
-
-Regulizers: elastic net, lasso, ridge, OWL, weighted lasso, weighted ridge, 
-eye penalty
-
-*** general nd data generation
-Data n = 2000
-
-n relevant groups (nrgroups) = 11
-
-n irrelevant group (nirgroups) = 0
-
-correlated variables pergroup (npergroup) = 4
-
-Given a covariance matrix C
-
-Do cholesky decomposition: C = A A^T
-
-h ~ N(0,1,shape=(n,d))
-
-x = h A^T
-
-\theta_i = 1 \forall i
-
-y = $\mathbb{1}_{X \theta > 0}$
-
-r (known risk factors): for each dependent group, set half as known, half as unknown
-
-Loss function is the negative loss likelihood of the logistic regression model.
-
-Optimizer: AdaDelta
-
-Number of Epoch: 1000
-
-Regulizers: elastic net, lasso, ridge, OWL, weighted lasso, weighted ridge, 
-eye penalty
-
-** running procedure
-*** first run (regularized b)
-
-b regularized
-
-fix hyperparmeters to predefined value
-
-repeat the following 100 times:
-
-generate data (x2 = 2x1), run the selected regularizers, record \theta
-
-*** second run (unregularized b, validation)
+2 variables: x_0 known, x_1 unknown
 
 b unregularized
 
-generate two datasets (x2 = 2x1), one for training, one for validation
+generate two datasets (x_1 = 2x_0), one for training, one for validation
 
 parameter search over the different hyperparams of the regularizers
 
@@ -350,7 +302,42 @@ repeat the following 100 times:
 
 generate data, run the selected regularizers, record \theta
 
-*** third run (data normalized, eye penalty)
+[[./old_figures/run2_x0.png]]
+
+[[./old_figures/run2_x1.png]]
+
+[[./old_figures/run2_b.png]]
+
+[[./old_figures/run2_avg.png]]
+
+No dicernable pattern in this run as data is unormalized. The addition of
+validation set makes the comparison fair between methods. The issue of
+normalization is addressed in ref:run3
+
+*** data gen
+Data n = 100:
+
+h = linspace(-2.5, 1, n)
+
+$x_0 \sim h$
+
+$x_1 \sim 2 h$
+
+$y = h > 0.5$
+
+r (known risk factors) = [1, 0]
+
+Loss function is the negative loss likelihood of the logistic regression model.
+
+Optimizer: AdaDelta
+
+Number of Epoch: 1000
+
+Regulizers: elastic net, lasso, ridge, penalty
+
+** 3_rd run (data normalized, eye penalty) label:run3
+
+2 variables: x_0 known, x_1 unknown
 
 b unregularized
 
@@ -370,15 +357,44 @@ generate data, normalize data, run the selected regularizers, record \theta
 The choosing criteria is still loss b/c AUROC is always going to be 1 in the
 deterministic case:
 
-[[./old_figures/$x_0$_distribution.png]]
+[[./old_figures/run3_x0.png]]
 
-[[./old_figures/$x_1$_distribution.png]]
+[[./old_figures/run3_x1.png]]
 
-[[./old_figures/$x_2$_distribution.png]]
+Most weights of x_1 for weighted lasso and eye are pushed to 0, confirming our
+intuition.
 
-[[file:old_figures/avg_reg.png]]
+[[./old_figures/run3_b.png]]
 
-*** Fourth run (noise added)
+[[file:old_figures/run3_avg.png]]
+
+In the next experiment ref:run4, we explore the effect of noise on regularization.
+
+*** data gen
+Data n = 100:
+
+h = linspace(-2.5, 1, n)
+
+$x_0 \sim h$
+
+$x_1 \sim 2 h$
+
+$y = h > 0.5$
+
+r (known risk factors) = [1, 0]
+
+Loss function is the negative loss likelihood of the logistic regression model.
+
+Optimizer: AdaDelta
+
+Number of Epoch: 1000
+
+Regulizers: elastic net, lasso, ridge, penalty, eye, weighted lasso, weighted
+ridge, ordered weighted lasso
+
+** 4_th run (noise added) label:run4
+
+2 variables: x_0 known, x_1 unknown
 
 b unregularized
 
@@ -393,17 +409,18 @@ for each regularizer, use the hyperparmeters that acheives the minimal loss
 
 repeat the following 100 times:
 
-generate data (x_i = Uniform(0..4) h + N(0,0.2)), normalize data, run the selected regularizers, record \theta
+generate data (x_i = Uniform(0..4) h + N(0,0.2)), normalize data, run the
+selected regularizers, record \theta
 
 The choosing criteria is loss
 
-[[./figures/$x_0$_distribution.png]]
+[[./old_figures/run4_x0.png]]
 
-[[./figures/$x_1$_distribution.png]]
+[[./old_figures/run4_x1.png]]
 
-[[./figures/$x_2$_distribution.png]]
+[[./old_figures/run4_b.png]]
 
-[[file:figures/avg_reg.png]]
+[[file:old_figures/run4_avg.png]]
 
 hyper parameter used:
 + enet(0.01, 0.2)
@@ -415,14 +432,45 @@ hyper parameter used:
 + weightedLasso(array([ 1.,  2.]), 0.01)
 + weightedRidge(array([ 1.,  2.]), 0.01)
 
-The sparsity in penalty can be explained as I placed no constraint on known risk
+The sparsity in penalty can be explained as I placed no constraint on the known risk
 factor (l1 ratio is 1), so it only regularizes x_1 not x_0
 
 [[./figures/main_players_x0.png]]
 
 [[./figures/main_players_x1.png]]
 
-*** fifth run (nd data, sweep r, fix correlation of 0.04, fix theta to 1)
+The noise in this experiment is chosen such that the model prefers
+regularization over unregularization (if is linearly separable, then grid search
+would favor unregularized case).
+
+The next few experiments illustrate the performance of regularization on high
+dimensional data.
+
+*** data gen
+Data n = 100:
+
+[[./figures/data.png]]
+
+h = linspace(-2.5, 1, n)
+
+$x_0 \sim Uniform(1..4) h + N(0, 0.2)$
+
+$x_1 \sim Uniform(1..4) h + N(0, 0.2)$
+
+$y = h > 0.5$
+
+r (known risk factors) = [1, 0]
+
+Loss function is the negative loss likelihood of the logistic regression model.
+
+Optimizer: AdaDelta
+
+Number of Epoch: 1000
+
+Regulizers: elastic net, lasso, ridge, OWL, weighted lasso, weighted ridge,
+penalty, eye penalty
+
+** 5_th run (nd data, sweep r, fix correlation of 0.04, fix theta to 1)
 b unregularized
 
 generate two datasets, one for training, one for validation
@@ -435,7 +483,7 @@ final candidate has loss around 0.083)
 
 for each regularizer, use the hyperparmeters that acheives the minimal loss
 
-repeat the following 10-20 times:
+repeat the following 10 times:
 
 generate data (detailed in nd data generation section), normalize data, run the selected regularizers, record \theta
 
@@ -476,25 +524,123 @@ enet: 30.2439873411
 [[./klmetric.numbers][kl/emd_metric_visual]] (generated using gen_result.py:gen_nd_loss_csv, is in
 .pages format so assumes mac, included in attachment)
 
-*** TODO sixth run (sweep corelation, fix r, fix theta to 1)
+*** data gen (genPartitionData)
+
+Data n = 5000
+
+n relevant groups (nrgroups) = 11
+
+n irrelevant group (nirgroups) = 11
+
+correlated variables pergroup (npergroup) = 10
+
+$h_i \sim Uniform(-3, 1, n)$
+
+\theta_i = 1 \forall i
+
+$x_{i,j} \sim$Uniform(1..2) h_i + N(0, 0.2)$ for i \in [n] for j \in [npergrop]
+
+$y = \frac{\sum_{i=1}^{nrgroups} h_i \theta_i}{\sum_{i=1}^{nrgroups} |\theta_i|} > -1$
+
+r (known risk factors): for each correlated variable group, putting in one
+more known risk factor than the previous group
+
+Loss function is the negative loss likelihood of the logistic regression model.
+
+Optimizer: AdaDelta
+
+Number of Epoch: 1000
+
+Regulizers: elastic net, lasso, ridge, OWL, weighted lasso, weighted ridge, 
+eye penalty
+
+** TODO 6_th run (sweep corelation, fix r, fix theta to 1)
+    b unregularized
+
+    generate two datasets, one for training, one for validation
+
+    normalize the data to 2 mean and 2 variance (validaton data is normalized
+    using mean and variance for the training data)
+
+    parameter search over the different hyperparams of the regularizers (each of the
+    final candidate has loss around 0.083)
+
+    for each regularizer, use the hyperparmeters that acheives the minimal loss
+
+    repeat the following 10 times:
+
+    generate data (detailed in nd data generation section), normalize data, run the selected regularizers, record \theta
+
+    The choosing criteria is loss
+
     construct a covariance matrix with 10 different blocks on diagnal with
     variables in each block having a different covariance value. This experiment
     is to discover the relationship between noise level and credibility.
 
-*** TODO seventh run (sweep fractional r, fix correlation, fix theta)
++    run(eye(r, 0.05), outdir="result_eye")
++    run(enet(0.01, 0.1), outdir="result_enet")
++    run(lasso(0.0005), outdir="result_lasso")
++    run(ridge(0.01), outdir="result_ridge")
++    run(weightedLasso(w1, 0.005), outdir="result_wlasso")
++    run(weightedRidge(w1, 0.01), outdir="result_wridge")
++    run(OWL(owl1, 0.001), outdir="result_owl")     
+
+*** general nd data generation
+Data n = 2000
+
+n relevant groups (nrgroups) = 11
+
+n irrelevant group (nirgroups) = 0
+
+correlated variables pergroup (npergroup) = 4
+
+Given a covariance matrix C
+
+Do cholesky decomposition: C = A A^T
+
+$h \sim N(0,1,shape=(n,d))$
+
+x = h A^T
+
+\theta_i = 1 \forall i
+
+$y = X \theta + N(0,5,n) > 0$
+
+note that the noise added to y makes the problem linearly inseparable so that
+regularization makes sense (otherwise validation will always choose the least
+regularized classifier).
+
+r (known risk factors): for each dependent group, set half as known, half as unknown
+
+Loss function is the negative loss likelihood of the logistic regression model.
+
+Optimizer: AdaDelta
+
+Number of Epoch: 1000
+
+Regulizers: elastic net, lasso, ridge, OWL, weighted lasso, weighted ridge, 
+eye penalty
+
+** TODO 7_th run (sweep fractional r, fix correlation, fix theta)
     To extend r to be fractional, we consider setting r according to
     parametrized functions: log, exp, sigmoid, and linear.
+    
+    [[./figures/r_weights.png]]
 
-*** TODO eighth run (sweep theta, fix r, fix correlation)
+** TODO 8_th run (sweep theta, fix r, fix correlation)
     Try different theta in data generation. I expect this will not make a difference in
     dependent groups compared to run 5, 6, and 7.
 
-*** TODO real data
+    What I mean is that different theta in the same dependent group will have
+    the same effect for all regularizations as long as the sum of theta is the
+    same. So it is questionable whether or not to run this experiment.
+    
+** TODO real data
     After graduating from simulated data, we will apply eye penalty to
     C. difficile prediction.
 
 * summary of regularizations used in this work
-*** eye penalty
+*** eye penalty label:eye_properties
 
     q(\theta) := 2 \beta ||(1-r) $\odot$ \theta||_1 + 
     (1-\beta) ||r $\odot$ \theta||_2^2
@@ -515,7 +661,8 @@ enet: 30.2439873411
     c can be chosen so that slope in the first quadrant between known risk
     factor x and unknown risk factor is -1
 
-    we define eye norm as a an atomic norm $||\cdot||_A$ as introduced in [[https://people.eecs.berkeley.edu/~brecht/papers/2010-crpw_inverse_problems.pdf][Venkat et al.]]
+    we define eye norm as a an atomic norm $||\cdot||_A$ as introduced in
+    cite:chandrasekaran2012convex
 
     $||x||_A := \inf\{t>0|x \in t conv(A)\}$
 
@@ -554,7 +701,7 @@ enet: 30.2439873411
   3) eye(\theta) = 0 iff \theta = 0
 + \beta doesn't affect the shape of contour, so no need to search over \beta
 
-  proof: 
+  #+BEGIN_proof
 
   consider the contour B_1 = {x: eye_{\beta_1}}(x) = t} andB_2 = {x:
   eye_{\beta_2}}(x) = t}
@@ -582,24 +729,27 @@ enet: 30.2439873411
 
   take x \in B_1'
 
-  then q_{\beta_1}(x) = 2 \beta_1 ||(1-r) * x||_1 +
-  (1-\beta_1) ||r*x||_2^2 = $\frac{\beta_1^2}{1-\beta_1}$
+  then $q_{\beta_1}(x) = 2 \beta_1 ||(1-r) \odot x||_1 +
+  (1-\beta_1) ||r \odot x||_2^2 = \frac{\beta_1^2}{1-\beta_1}$
 
   let x' = $\frac{\beta_2 (1-\beta_1)}{\beta_1 (1-\beta_2)}$ x
 
   \begin{align}
-  q_{\beta_2}(x') &= 2 \beta_2 ||(1-r) * x'||_1 +
-  (1-\beta_2) ||r*x'||_2^2\\
-  &= \frac{2 \beta_2^2 (1-\beta_1)}{\beta_1 (1-\beta_2)} ||(1-r) * x||_1 + 
-  \frac{\beta_2^2 (1-\beta_1)^2}{\beta_1^2 (1-\beta_2)} ||r*x||_2^2\\
-  &= \frac{\beta_2^2 (1-\beta_1)}{\beta_1^2 (1-\beta_2)} (2 \beta_1 ||(1-r) * x||_1 +
-  (1-\beta_1) ||r*x||_2^2)\\
+  q_{\beta_2}(x') &= 2 \beta_2 ||(1-r) \odot x'||_1 +
+  (1-\beta_2) ||r \odot x'||_2^2\\
+  &= \frac{2 \beta_2^2 (1-\beta_1)}{\beta_1 (1-\beta_2)} ||(1-r) \odot x||_1 + 
+  \frac{\beta_2^2 (1-\beta_1)^2}{\beta_1^2 (1-\beta_2)} ||r \odot x||_2^2\\
+  &= \frac{\beta_2^2 (1-\beta_1)}{\beta_1^2 (1-\beta_2)} (2 \beta_1 ||(1-r) \odot x||_1 +
+  (1-\beta_1) ||r \odot x||_2^2)\\
   &= \frac{\beta_2^2 (1-\beta_1)}{\beta_1^2 (1-\beta_2)} \frac{\beta_1^2}{1-\beta_1} \\
   &= \frac{\beta_2^2}{1-\beta_2}
   \end{align}
 
   so x' \in B_2'. Thus $\frac{\beta_2 (1-\beta_1)}{\beta_1 (1-
   beta_2)}$ B_1' \subset B_2'. The other direction is similarly proven.
+  #+END_proof
+
+
 + eye as a generalization of elastic net, lasso, and ridge
   
   By relaxing the constraint of r from binary to float, we can recover elastic
@@ -668,10 +818,21 @@ r_1 = 1.0
 
     [[./contour/enet_add.png]] 
 
-*** lasso
+*** lasso cite:tibshirani1996regression
     \alpha ||\theta||_1
 
     [[./contour/lasso_add.png]]
+
+    In the orthogonal case: $X^T X = I$
+    
+    we have
+    
+    $\theta = S_{n \lambda}(\theta^{OLS})$
+
+    where $\theta^{OLS}$ is the value of ordinary least square
+
+    and $S_{\alpha}(x) = x max(0, 1-\frac{\alpha}{|x|})$ (the soft threshold
+    function, note that in the limiting case converge to $y=x$)
 
 *** ridge
 0.5 \alpha ||\theta||_2^2
@@ -687,7 +848,7 @@ degenerated case: back to lasso
 
 [[./contour/OWL_w1=1=w2=1.png]]
 
-degenerated case: back to l_{\inf}
+degenerated case: back to l_{\infty}
 
 [[./contour/OWL_w1=2>w2=0.png]]
 
@@ -701,27 +862,37 @@ in the regular case, the minimal atomic set for this norm is known (the corners
 are easily calculated)
 
 *** weighted lasso
-\alpha ||w $\odot$ \theta||_1 where w \in $\mathbb{R}$_+^d
+$\alpha ||w \odot \theta||_1$ where w \in $\mathbb{R}_+^d$
 
 [[./contour/wlasso_add.png]]
 
 *** weighted ridge 
-0.5 \alpha ||w $\odot$ \theta||_2^2 where w \in $\mathbb{R}$_{+}^{d}
+$0.5 \alpha ||w \odot \theta||_2^2$ where w \in $\mathbb{R}_{+}^{d}$
 
 [[./contour/wridge_add.png]]
 
 *** old penalty
-\alpha (0.5 (1-\beta) ||r $\odot$ \theta||_2^2 + \beta ||(1-r) $\odot$ \theta||_1)
-where r \in {0,1}^d, \theta \in $\mathbb{R}$^d, \alpha \in $\mathbb{R}$, \beta \in [0,1]
+$\alpha (0.5 (1-\beta) ||r \odot \theta||_2^2 + \beta ||(1-r) \odot \theta||_1)$
+where r \in {0,1}^d, \theta \in $\mathbb{R}^d$, \alpha \in $\mathbb{R}$, \beta \in [0,1]
 
 [[./contour/penalty_add.png]]
 
-
-
-
-
-
-
 # references
-bibliography:ref.bib
 bibliographystyle:plain
+bibliography:ref.bib
+
+* for discussion:
+1. idea for experiment 6,7,8
+2. validate method for reporting pvalue
+   
+   H_0: mean loss or auroc across method
+   
+   H_1: mean loss or auroc for each method
+
+   test if H_0 different from H_1?
+
+* next
+1. wrap up simulation
+2. try on real data
+3. migrate to server to run the experiments
+4. continue the writeup

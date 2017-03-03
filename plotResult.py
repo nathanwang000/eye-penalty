@@ -79,6 +79,7 @@ def returnBest(methods=regs, criteria='validation/main/loss',
         record = json.load(open(path.join(dirname, fn, 'log')))
         extractRecord = extract(record)
         key = extractRecord(criteria)
+        print(report)
         try:
             print(args, key[-1], *[extractRecord(r)[-1]\
                                    for r in report])
