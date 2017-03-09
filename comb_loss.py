@@ -11,7 +11,6 @@ from chainer.training import extensions
 from chainer.datasets import TupleDataset
 import os
 from itertools import product
-from convergeTrigger import ConvergeTrigger
 from sklearn.metrics import roc_auc_score, roc_curve
 import hashlib, pickle
 import itertools
@@ -20,7 +19,6 @@ from scipy.linalg import block_diag
 
 # todo
 # 1. look for all unknown but different weight (balanced data)
-# 2. run 2 more experiments
 
 ############ utility functions ##################
 def l1norm(v):
@@ -29,7 +27,7 @@ def l1norm(v):
 def l2normsq(v):
     return F.sum(v**2)
 
-def normalizer(mu=2, std=2):
+def normalizer(mu=0, std=1):
     currsum = 0
     n = 0
     currx2 = 0
@@ -130,7 +128,7 @@ group_theta = np.ones(1000)[:,None]
 def genCovData(C=None, theta=None, n=n, dim=d):
     # C is the covariance matrice (assume to be psd)
     # y = Bernoulli(\theta x), z~Norm(0,I), x = Az
-    noise = np.random.randn(n)  * 5
+    noise = np.random.randn(n) * 5
     if C is None:
         C = np.diag(np.ones(dim))
     A = np.linalg.cholesky(C)
@@ -751,17 +749,59 @@ def experiment2d(num_runs=100):
     run(weightedRidge(array([ 1.,  2.]), 0.01), 
                  "result_wridge")
 
-def experimentNd(num_runs=10):
+def generate_risk(nrgroups, nirgroups, pergroup, experiment):
+    if experiment == "binary_r":
+        nrvars = nrgroups * pergroup
+        r = np.zeros(nrvars)
+        for i in range(0, nrvars//pergroup):
+            r[(i*pergroup):(i*pergroup+i)] = 1
+        r = np.concatenate((r,r))
+    elif experiment == "corr":
+        rbase = np.zeros(pergroup)
+        rbase[:pergroup//2] = 1
+        r = np.concatenate([rbase for _ in range(nrgroups)])
+    elif experiment == "frac_r":
+        # consider sigmoid, log, exp
+        def clip_(f):
+            def f_(a, n):
+                res = f(a, n)
+                m, M = np.min(res), np.max(res)
+                return (res-m) / (M-m)
+            return f_
+        @clip_
+        def sigmoid_(a, n):
+            x = np.linspace(-1,1,n)
+            return 1/(1+np.exp(-a*x))
+        @clip_
+        def exp_(a, n):
+            x = np.linspace(-1,1,n)
+            return np.exp(a*x)
+        @clip_
+        def log_(a, n):
+            a = 30 * a
+            x = np.linspace(0,1,n)
+            return np.log(a*x+1)
+        funcs = {
+            sigmoid_,
+            exp_,
+            log_
+        }
+        alphas = [1,3,6,10]         
+        r = np.ones(nrgroups * pergroup)
+        rindex = 0
+        for f in funcs:
+            for a in alphas:
+                r[rindex:rindex+pergroup] = f(a, pergroup)
+                rindex += pergroup
+    return r
+
+def experimentNd(num_runs=10): # binary r
     nrgroups = 11
     nirgroups = nrgroups
     pergroup = 10
     n = 5000
     # construct known and unknown variables
-    nrvars = nrgroups * pergroup
-    r = np.zeros(nrvars)
-    for i in range(0, nrvars//pergroup):
-        r[(i*pergroup):(i*pergroup+i)] = 1
-    r = np.concatenate((r,r))
+    r = generate_risk(nrgroups, nirgroups, pergroup, "binary_r")
     w1 = 2-r
     owl1 = np.arange(r.size) # polytope
     owl2 = np.zeros(r.size)  # inf norm
@@ -792,12 +832,12 @@ def experimentNdCov(num_runs=10):
     # is explored in the previous round
     # evaluate by correlation weighted kl/emd metric
     nrgroups = 10
+    nirgroups = 0
     pergroup = 4
-    rbase = np.zeros(pergroup)
-    rbase[:pergroup//2] = 1
-    r = np.concatenate([rbase for _ in range(nrgroups)])
-    correlations = [i/nrgroups for i in range(nrgroups)]
 
+    r = generate_risk(nrgroups, nirgroups, pergroup, "corr")
+
+    correlations = [i/nrgroups for i in range(nrgroups)]
     blocks = []
     for c in correlations:
         base = np.diag(np.ones(pergroup))        
@@ -864,7 +904,8 @@ def experimentNdR():
     pergroup = 10
     alphas = [1,3,6,10] 
     nrgroups = len(alphas) * len(funcs)
-
+    nirgroups = 0
+    
     r = np.ones(nrgroups * pergroup)
     rindex = 0
     for f in funcs:
@@ -922,10 +963,12 @@ def distribution_normalizer(p, q):
         qnorm = (np.abs(qnorm)+smooth) / (np.abs(qnorm)+smooth).sum()
     return pnorm, qnorm
 
-def kl(p, q):
-    # calculate KL(p||q) = E(log p/q)
+def kl(p, q): # balanced version
+    # calculate (KL(p||q) + K(q||p)) / 2 where KL(p||q) = E(log p/q)
     pnorm, qnorm = distribution_normalizer(p, q)
-    return (pnorm * np.log(pnorm) - pnorm * np.log(qnorm)).sum()
+    def kl_(p, q):
+        return (p * np.log(p) - p * np.log(q)).sum()
+    return (kl_(pnorm, qnorm) + kl_(qnorm, pnorm)) / 2
 
 def emd(p,q):
     pnorm, qnorm = distribution_normalizer(p, q)
@@ -941,6 +984,7 @@ def knownRiskFactorReader(r, t, nrgroups, nirgroups, pergroup):
     # assume r is formulated such that nrgroups are first
     # and pergroup are together in r
     # t is theta
+    #print(r.size, t.size, (nrgroups + nirgroups) * pergroup)
     assert r.size == (nrgroups + nirgroups) * pergroup, "size not checked"
     assert r.size == t.size, "size mismatch"
     ptr_s = 0
@@ -985,27 +1029,26 @@ def naiveKLmetric(risk, theta, nrgroups, nirgroups, pergroup, method="kl"):
     # each should be weighted against the true theta_i for each group
     return loss    
 
-def KLmetricUser(t, method="kl"):
+def KLmetricUser(t, nrgroups=11, nirgroups=11, pergroup=10, method="kl",
+                 experiment="binary_r"):
     # not intended for client: for internal report use
-    nrgroups = 11
-    nirgroups = nrgroups
-    pergroup = 10
-    n = 5000
     # construct known and unknown variables
-    nrvars = nrgroups * pergroup
-    r = np.zeros(nrvars)
-    for i in range(0, nrvars//pergroup):
-        r[(i*pergroup):(i*pergroup+i)] = 1
-    r = np.concatenate((r,r))
+    r = generate_risk(nrgroups, nirgroups, pergroup, experiment)
     n = naiveKLmetric(r, t, nrgroups, nirgroups, pergroup, method)    
     return n
 
-def reportKL(fn, f=lambda x: x.mean(), method="kl"):
+def reportKL(fn, f=lambda x: x.mean(), method="kl",
+             nrgroups=11, nirgroups=11, pergroup=10,
+             experiment="binary_r"):
     # report kl mean for each function
     t = np.load(os.path.join(fn, "theta.npy"))
     t = t[:,:-1] # exclude b
     n, d = t.shape
-    iterables = tuple(KLmetricUser(t[i], method=method) for i in range(n))
+    iterables = tuple(KLmetricUser(t[i], method=method,
+                                   nrgroups=nrgroups,
+                                   nirgroups=nirgroups,
+                                   pergroup=pergroup,
+                                   experiment=experiment) for i in range(n))
     tagged_stats = []
     for items in itertools.zip_longest(*iterables):
         tag = items[0][4]
@@ -1013,12 +1056,19 @@ def reportKL(fn, f=lambda x: x.mean(), method="kl"):
         tagged_stats.append((tag, f(l)))
     return tagged_stats
 
-def reportTheta(fn, f=lambda x: x.mean(), method="kl"):
+def reportTheta(fn, f=lambda x: x.mean(), method="kl",
+                nrgroups=11, nirgroups=11, pergroup=10,
+                experiment="binary_r"):
     # report kl mean for each function
     t = np.load(os.path.join(fn, "theta.npy"))
     t = t[:,:-1] # exclude b
     n, d = t.shape
-    iterables = tuple(KLmetricUser(t[i], method=method) for i in range(n))
+    iterables = tuple(KLmetricUser(t[i], method=method,
+                                   nrgroups=nrgroups,
+                                   nirgroups=nirgroups,
+                                   pergroup=pergroup,
+                                   experiment=experiment) for i in range(n))
+
     tagged_stats = []
     for items in itertools.zip_longest(*iterables):
         tag = items[0][4]

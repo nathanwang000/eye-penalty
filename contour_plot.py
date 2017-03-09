@@ -53,24 +53,33 @@ def Zeye(r1=1, r2=0, l1_ratio=l1_ratio):
         return (-b + np.sqrt(b**2-4*c*a)) / (2*a)
     if l1_ratio == 0 or l1_ratio == 1:
         return Zpenalty(l1_ratio)
-    b = l1_ratio * (abs((1-r1) * X) + abs((1-r2) * Y))
-    a = 0.5 * (1-l1_ratio) * ((r1 * X)**2 + (r2 * Y)**2) 
+    b = 2 * l1_ratio * (abs((1-r1) * X) + abs((1-r2) * Y))
+    a = (1-l1_ratio) * ((r1 * X)**2 + (r2 * Y)**2) 
     c = l1_ratio**2 / (1-l1_ratio)
     if r1 == 0 and r2 == 0: return b/c
     return alpha * 1 / solveQuadratic(a, b, -c)
 
-levels = [5]#[1,2,3,4,5,6,7,8,9,10]
+def Zorthog(r=0.5, l=1, n=1, C=20, D=20):
+    Z = np.sqrt((C+(1-r)*abs(Y))**2+D+r*Y**2)
+    return X / (1+n*l*r**2/Z) * np.maximum(0, 1-n*l*(1-r)*(1+\
+           (C+(1-r)*abs(Y))/Z) / abs(X)) - Y
+    
+levels = [0]#[1,2,3,4,5,6,7,8,9,10]
 
-NUM_COLORS = 10
-cm = plt.get_cmap('gist_rainbow')
-colors = [cm(1.*i/NUM_COLORS) for i in range(NUM_COLORS)]
-i=0
-for l in np.arange(0.1,1,0.1):
-    l1_ratio = l
-    drawContour(Zeye(l1_ratio=l1_ratio),
-                "eye", levels, c=[colors[i%len(colors)]])
-    i+=1
-plt.show()    
+# drawContour(Zorthog(0.5, C=20, D=20), "orthog", levels)
+# drawContour(Zorthog(0.9), "orthog", levels)
+# drawContour(Zorthog(0.9), "orthog", levels)
+    
+# NUM_COLORS = 10
+# cm = plt.get_cmap('gist_rainbow')
+# colors = [cm(1.*i/NUM_COLORS) for i in range(NUM_COLORS)]
+# i=0
+# for l in np.arange(0.1,1,0.1):
+#     l1_ratio = l
+#     drawContour(Zeye(l1_ratio=l1_ratio),
+#                 "eye", levels, c=[colors[i%len(colors)]])
+#     i+=1
+# plt.show()    
 
 # drawContour(Zeye(0, 0), "eye_lasso", levels) # same as lasso
 # drawContour(Zeye(1, 1), "eye_ridge", levels)  # same as wridge
