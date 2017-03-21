@@ -17,9 +17,6 @@ import itertools
 from pyemd import emd_with_flow
 from scipy.linalg import block_diag
 
-# todo
-# 1. look for all unknown but different weight (balanced data)
-
 ############ utility functions ##################
 def l1norm(v):
     return F.sum(abs(v))
@@ -220,9 +217,9 @@ def genPartitionData(n=n, nrgroups=11, nirgroups=11, pergroup=10,\
         plt.show()        
     return X.astype(np.float32), y.astype(np.float32)
 
-def gendata(plot=False, name=None, d=d,
+def gendata(plot=False, name=None, d=2,
             signoise=0.2, scaleh=2, munoise=0,
-            left=-2.5, right=1.5):
+            left=-2.5, right=1.5, n=100):
     mu = (left + right) / 2    
     h = np.linspace(left,right,n).reshape(n,1)
     y = h > mu
@@ -282,16 +279,17 @@ class Regresser(Chain):
         y = self.predictor(x)
         loss = self.lossfun(y, t)
         regloss = 0
-        sparsity = 0 # not really working as most are not exact 0
+        # sparsity = 0 # not really working as most are not exact 0
         if self.regularizer:
             W = self.predictor.l1.W
             b = self.predictor.l1.b
             # theta = F.concat((F.flatten(W), b), 0)
             theta = F.flatten(W) # don't regularize b
             regloss = self.regularizer(theta)
-            sparsity = np.isclose(0,theta.data).sum() /\
-                       theta.data.size
-            
+            # sparsity = np.isclose(0,theta.data).sum() /\
+            #            theta.data.size
+
+        n = y.data.size
         acc = (n-np.sum(abs((y.data > 0.5) - t.data))) / n
         try: # y may be nan if predictor.W is nan
             y_true = t.data if isinstance(t, Variable) else t 
@@ -302,8 +300,7 @@ class Regresser(Chain):
         report({'loss': loss,
                 'penalty': regloss,
                 'accuracy': acc,
-                'auroc': auroc,
-                'sparsity': sparsity}, self)
+                'auroc': auroc}, self)
         return loss + regloss
 
 ############ run #############################
@@ -346,16 +343,17 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
                                    out=outdir)
         logname = "log_"+str(namebase+i)
         trainer.extend(extensions.LogReport(log_name=logname))
+
+        # validate
+        test_iter = iterators.SerialIterator\
+                    (TupleDataset(Xval,yval),
+                     batch_size=100,
+                     repeat=False,
+                     shuffle=False)
+        trainer.extend(extensions.Evaluator(test_iter, model))
         if printreport:
-            # validate
-            test_iter = iterators.SerialIterator\
-                        (TupleDataset(Xval,yval),
-                         batch_size=100,
-                         repeat=False,
-                         shuffle=False)
-            trainer.extend(extensions.Evaluator(test_iter, model))
-            trainer.extend(extensions.PrintReport(['main/accuracy',
-                                                   'main/penalty',
+            trainer.extend(extensions.PrintReport(['validation/main/accuracy',
+                                                   'main/accuracy',
                                                    'validation/main/loss',
                                                    'main/loss']))
 
@@ -385,22 +383,24 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
     
 
 ################# set up for known ###########
-# penalyze b 
-# r = np.zeros(d+1) # for modified penalty
+# r = np.zeros(d) # for modified penalty
 # if d == 2: r[0] = 1
 # w0 = 1 - r # don't penalize known
 # w1 = w0 + 1 # penalize unknown more
 
-# don't penalyze b
-r = np.zeros(d) # for modified penalty
-if d == 2: r[0] = 1
-w0 = 1 - r # don't penalize known
-w1 = w0 + 1 # penalize unknown more
-
 ################# parameter search ###########
-def paramsSearch():
-    Xtrain, ytrain = gendata(True, 'train')
-    Xval, yval = gendata(True, 'val')
+def paramsSearch2d(datagen=lambda: gendata(n=100,signoise=0.2),
+                   basedir="val",
+                   methods=['lasso', 'ridge', 'enet', 'penalty',
+                            'wlasso', 'wridge', 'owl', 'eye']):
+    # don't penalyze b
+    r = np.zeros(d) # for modified penalty
+    if d == 2: r[0] = 1
+    w0 = 1 - r # don't penalize known
+    w1 = w0 + 1 # penalize unknown more
+    
+    Xtrain, ytrain = datagen()
+    Xval, yval = datagen()
     # preprocess
     normalize = normalizer()
     Xtrain = normalize(Xtrain)
@@ -423,11 +423,11 @@ def paramsSearch():
         'eye': (eye, (r,), (0.1, 0.01, 0.001, 0.0001))
     }
 
-    for method in params_cand:
+    for method in methods:
         m = params_cand[method]
         f, args = m[0], m[1:]
         for arg in product(*args):
-            outdir = "val/" + method + str(arg)
+            outdir = os.path.join(basedir, method + str(arg))
             print(outdir)
             reg = f(*arg)
             # train
@@ -729,7 +729,6 @@ def paramsSearchR():
             
             
 ############ set up regularizers #############
-
 def experiment2d(num_runs=100):
     def run_with_reg_wrapper(num_runs):
         def _f(*args,**kwargs):
