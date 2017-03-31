@@ -1,3 +1,7 @@
 *~
 #*
 *.pyc
+submit/output
+submit/error
+submit/experiment.log
+noise2d/

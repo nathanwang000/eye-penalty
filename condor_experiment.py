@@ -62,6 +62,6 @@ def diffTheta(index):
     )
 
 
-diffTheta(sys.argv[1])
-#noise2d(sys.argv[1])
+# diffTheta(sys.argv[1])
+noise2d(sys.argv[1])
 
