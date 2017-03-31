@@ -52,6 +52,12 @@ def normalizer(mu=0, std=1):
 
 ############ penalties ##########################
 def eye(r, alpha=1):
+    def f_(theta):
+        return alpha * (l1norm((1-r)*theta) +
+                        F.sqrt(l1norm((1-r)*theta)**2 + l2normsq(r*theta)))
+    return f_
+
+def old_eye(r, alpha=1):
     # l1_ratio change will just stretch the unit norm ball
     # so it can be fixed
     l1_ratio = 0.5 

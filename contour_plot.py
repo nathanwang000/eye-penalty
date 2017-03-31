@@ -1,14 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-a = -10
-b = 10
+a = -4
+b = 4
 xlist = np.linspace(a, b, 100)
 ylist = np.linspace(a, b, 100)
 X, Y = np.meshgrid(xlist, ylist)
 
 def drawContour(Z, name, levels=None,
-                save=False, c=None):
+                save=False, c=None, useLabel=True):
     if levels:
         if c:
             cp = plt.contour(X, Y, Z, levels, colors=c)
@@ -19,12 +19,13 @@ def drawContour(Z, name, levels=None,
             cp = plt.contour(X, Y, Z, colors=c)
         else:
             cp = plt.contour(X, Y, Z)
-    plt.clabel(cp, inline=True, fontsize=10)
+    if useLabel: plt.clabel(cp, inline=True, fontsize=10)
     plt.title(name + ' Contour Plot')
-    plt.xlabel('x')
-    plt.ylabel('y')
+    plt.xlabel('$x_0$')
+    plt.ylabel('$x_1$')
     if save:
         plt.savefig('contour/'+name+'.png')
+    else: plt.show()
 
 alpha = 1
 l1_ratio = 0.5
@@ -63,16 +64,17 @@ def Zorthog(r=0.5, l=1, n=1, C=20, D=20):
     Z = np.sqrt((C+(1-r)*abs(Y))**2+D+r*Y**2)
     return X / (1+n*l*r**2/Z) * np.maximum(0, 1-n*l*(1-r)*(1+\
            (C+(1-r)*abs(Y))/Z) / abs(X)) - Y
-    
-levels = [0]#[1,2,3,4,5,6,7,8,9,10]
+
+NUM_COLORS = 10
+cm = plt.get_cmap('gist_rainbow')
+colors = [cm(1.*i/NUM_COLORS) for i in range(NUM_COLORS)]
+
+levels = [3]#[1,2,3,4,5,6,7,8,9,10]
 
 # drawContour(Zorthog(0.5, C=20, D=20), "orthog", levels)
 # drawContour(Zorthog(0.9), "orthog", levels)
 # drawContour(Zorthog(0.9), "orthog", levels)
     
-# NUM_COLORS = 10
-# cm = plt.get_cmap('gist_rainbow')
-# colors = [cm(1.*i/NUM_COLORS) for i in range(NUM_COLORS)]
 # i=0
 # for l in np.arange(0.1,1,0.1):
 #     l1_ratio = l
@@ -112,5 +114,15 @@ levels = [0]#[1,2,3,4,5,6,7,8,9,10]
 #         print(r1, r2)
 #         i += 1
 #     plt.show()
+
+# plt.show()
+
+# r1 = 1
+# i = 0
+# for r2 in np.arange(0,r1+0.01,0.1):
+#     drawContour(Zeye(r1,r2), "eye_fraction", levels,
+#                 c=[colors[i%len(colors)]])
+#     print(r1, r2)
+#     i += 1
 
 # plt.show()
