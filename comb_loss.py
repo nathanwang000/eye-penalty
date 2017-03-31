@@ -116,84 +116,80 @@ def enet(alpha=1, l1_ratio=0.5):
     return f_
 
 #############synthetic data##################
-# fake 2d data perfectly correlated
 niterations = 1000
 n = 100
 d = 2
-group_theta = np.ones(1000)[:,None]
 
-def genCovData(C=None, theta=None, n=n, dim=d):
+# sigmoid function
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
+def genCovX(C, n): # helper for difftheta
     # C is the covariance matrice (assume to be psd)
-    # y = Bernoulli(\theta x), z~Norm(0,I), x = Az
-    noise = np.random.randn(n) * 5
+    # n is number of examples
+    A = np.linalg.cholesky(C)
+    d, _ = C.shape
+    Z = np.random.randn(n, d)
+    X = Z.dot(A.T) 
+    return X.astype(np.float32)
+
+def genCovData(C=None, theta=None, n=n, dim=d, signoise=5): # signoise on y
+    # C is the covariance matrice (assume to be psd)
+    # y = Bernoulli(sigmoid(\theta x)), z~Norm(0,I), x = Az
+    noise = np.random.randn(n) * signoise
     if C is None:
         C = np.diag(np.ones(dim))
-    A = np.linalg.cholesky(C)
-    d, nc = A.shape
     if theta is None:
         theta = np.ones((d,1))         
-    assert d==theta.size, "size mismatch"
-    Z = np.random.randn(n, d)
-    X = Z.dot(A.T) # linearly separable
+    assert C.shape[0]==theta.size, "size mismatch"
+    X = genCovX(C, n)
+
+    # y = sigmoid(X.dot(theta) + noise)
+    # for i in range(n):
+    #     y[i] = np.random.binomial(1,y[i]) # bernoulli
     y = (X.dot(theta) + noise > 0).reshape(n,1)
-    return X.astype(np.float32), y.astype(np.float32)
+    return X.astype(np.float32), y.astype(np.float32).reshape(y.size,1) 
 
-def setupCovR():
-    # sweep fractional r: fix correlation to 0.99, theta to 1
-    c = 0.99 
-    # consider sigmoid, log, exp
-    def clip_(f):
-        def f_(a, n):
-            res = f(a, n)
-            m, M = np.min(res), np.max(res)
-            return (res-m) / (M-m)
-        return f_
-    @clip_
-    def sigmoid_(a, n):
-        x = np.linspace(-1,1,n)
-        return 1/(1+np.exp(-a*x))
-    @clip_
-    def exp_(a, n):
-        x = np.linspace(-1,1,n)
-        return np.exp(a*x)
-    @clip_
-    def log_(a, n):
-        a = 30 * a
-        x = np.linspace(0,1,n)
-        return np.log(a*x+1)
-    funcs = {
-        sigmoid_,
-        exp_,
-        log_
-    }
-    pergroup = 10
-    alphas = [1,3,6,10] 
-    nrgroups = len(alphas) * len(funcs)
+def genDiffTheta(n=1000): # bernoulli so noise also on y
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from scipy.linalg import block_diag
+    ng = np.random.poisson(10)
+    w = np.random.normal(0,1,ng)
+    nd = np.random.poisson(20,ng)
+    d = nd.sum() # feature dimension
+    risk = np.random.uniform(0,1,d)
+    # linearly distribute w_i to theta_i according to risk_i
+    theta = risk.copy()
+    istart = 0
+    for ndi in nd:
+        iend = istart+ndi
+        theta[istart:iend] /= risk[istart:iend].sum()
+        istart = iend
+    theta *= np.repeat(w, nd)
+    InGrpCov = 0.95
+    CovErr = np.random.normal(0.002, 0.01, (d,d))
+    CovErr = (CovErr + CovErr.T) / 2 # not psd so no noise added here
+    blocks = []
+    for ndi in nd:
+        block = np.diag(np.ones(ndi))
+        block[block==0] = InGrpCov
+        blocks.append(block)
+    CovM = np.clip(block_diag(*blocks) + 0*CovErr, 0, 1)
+    def _datagen():
+        X = genCovX(C=CovM, n=n)
+        y = sigmoid(X.dot(theta))
+        for i in range(n):
+            y[i] = np.random.binomial(1,y[i]) # bernoulli
+        return X.astype(np.float32), y.astype(np.float32).reshape(y.size,1) 
+        
+    return _datagen, (theta, risk, nd)
 
-    r = np.ones(nrgroups * pergroup)
-    rindex = 0
-    for f in funcs:
-        for a in alphas:
-            r[rindex:rindex+pergroup] = f(a, pergroup)
-            rindex += pergroup
-
-    base = np.diag(np.ones(pergroup))        
-    base[base==0] = c
-    C = block_diag(*([base]*nrgroups))
-    # actually relvant or not are given by theta    
-    theta = np.ones(nrgroups*pergroup)
-    X, y = genCovData(C=C, theta=theta, n=2000)
-    return X, y
-    
-def setupCovTheta():
-    # sweep theta in relevant all unknown to see sparseness
-    # todo
-    pass
-    
+# noise added on X, so really is correlation structure that's changed, todo:
 def genPartitionData(n=n, nrgroups=11, nirgroups=11, pergroup=10,\
                      signoise=0.2, scaleh=2, munoise=0,\
                      left=-3, right=1,
-                     plot=False, name=None):
+                     plot=False, name=None): 
     mu = (left + right) / 2
     # nrgroups: relevant groups
     # nirgroups: irrelevant groups
@@ -201,7 +197,7 @@ def genPartitionData(n=n, nrgroups=11, nirgroups=11, pergroup=10,\
     d = ngroups * pergroup
     H = np.random.random((n,ngroups)) * abs(right-left) + left
     # y = sum(\theta_i * h_i) for h_i being relevant group
-    g_theta = group_theta[:nrgroups]
+    g_theta = np.ones(nrgroups)[:,None]
     y = H[:,:nrgroups].dot(g_theta)/sum(abs(g_theta)) >= mu
     X = np.repeat(H, pergroup, axis=1)
     
@@ -217,6 +213,7 @@ def genPartitionData(n=n, nrgroups=11, nirgroups=11, pergroup=10,\
         plt.show()        
     return X.astype(np.float32), y.astype(np.float32)
 
+# noise added on X, so really is correlation structure that's changed, todo:
 def gendata(plot=False, name=None, d=2,
             signoise=0.2, scaleh=2, munoise=0,
             left=-2.5, right=1.5, n=100):
@@ -237,7 +234,6 @@ def gendata(plot=False, name=None, d=2,
         plt.savefig('figures/'+name+'.png', bbox_inches='tight')
         plt.show()        
     return X.astype(np.float32), y.astype(np.float32)
-
 
 
 #############the model#########################
@@ -305,18 +301,20 @@ class Regresser(Chain):
 
 ############ run #############################
 def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
-                 printreport=False, resume=True):
+                 printreport=False, resume=True, niterations=1000,
+                 namebase=None):
     print(outdir)
     thetas = []
 
     # open dir to see from log? to start
-    namebase = 0
-    if resume and os.path.exists(outdir):
-        for fn in os.listdir(outdir):
-            if fn.startswith("log_"):
-                number = int(fn[4:])
-                if number >= namebase:
-                    namebase = number+1
+    if not namebase:
+        namebase = 0
+        if resume and os.path.exists(outdir):
+            for fn in os.listdir(outdir):
+                if fn.startswith("log_"):
+                    number = int(fn[4:])
+                    if number >= namebase:
+                        namebase = number+1
     
     for i in range(num_runs):
         X, y = datagen()
@@ -352,13 +350,16 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
                      shuffle=False)
         trainer.extend(extensions.Evaluator(test_iter, model))
         if printreport:
-            trainer.extend(extensions.PrintReport(['validation/main/accuracy',
+            trainer.extend(extensions.PrintReport(['validation/main/auroc',
+                                                   'main/auroc',
+                                                   'validation/main/accuracy',
                                                    'main/accuracy',
-                                                   'validation/main/loss',
-                                                   'main/loss']))
-
+                                                   # 'validation/main/loss',
+                                                   # 'main/loss',
+                                                   'main/penalty']))
+        trainer.run()                       
         try:
-            trainer.run()            
+
             should_break=False
         except:
             should_break=True
@@ -390,14 +391,13 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
 
 ################# parameter search ###########
 def paramsSearch2d(datagen=lambda: gendata(n=100,signoise=0.2),
+                   risk = np.array([1,0]),
                    basedir="val",
                    methods=['lasso', 'ridge', 'enet', 'penalty',
-                            'wlasso', 'wridge', 'owl', 'eye']):
+                            'wlasso', 'wridge', 'owl', 'eye'],
+                   niterations = 1000):
     # don't penalyze b
-    r = np.zeros(d) # for modified penalty
-    if d == 2: r[0] = 1
-    w0 = 1 - r # don't penalize known
-    w1 = w0 + 1 # penalize unknown more
+    w1 = 2-risk # penalize unknown more
     
     Xtrain, ytrain = datagen()
     Xval, yval = datagen()
@@ -412,7 +412,7 @@ def paramsSearch2d(datagen=lambda: gendata(n=100,signoise=0.2),
         'ridge': (ridge, (0.1, 0.01, 0.001, 0.0001)),
         'enet': (enet, (0.1, 0.01, 0.001, 0.0001),
                  tuple(i/10 for i in range(11))),
-        'penalty': (penalty, (r,), (0.1, 0.01, 0.001, 0.0001),
+        'penalty': (penalty, (risk,), (0.1, 0.01, 0.001, 0.0001),
                     tuple(i/10 for i in range(11))),
         'wlasso': (weightedLasso, (w1,),
                    (0.1, 0.01, 0.001, 0.0001)),
@@ -420,7 +420,7 @@ def paramsSearch2d(datagen=lambda: gendata(n=100,signoise=0.2),
                    (0.1, 0.01, 0.001, 0.0001)),
         'owl': (OWL, ([2,1], [1,1], [1,0]),
                 (0.1, 0.01, 0.001, 0.0001)),
-        'eye': (eye, (r,), (0.1, 0.01, 0.001, 0.0001))
+        'eye': (eye, (risk,), (0.1, 0.01, 0.001, 0.0001))
     }
 
     for method in methods:
@@ -456,107 +456,14 @@ def paramsSearch2d(datagen=lambda: gendata(n=100,signoise=0.2),
             trainer.extend(extensions.LogReport(log_name="log"))
             trainer.run()
 
-def paramsSearchNd():
-    nrgroups = 11
-    nirgroups = nrgroups
-    pergroup = 10
-    n = 5000
-    # construct known and unknown variables
-    # in this case there's 220 variables with 110 variables being noise    
-    nrvars = nrgroups * pergroup
-    r = np.zeros(nrvars)
-    for i in range(0, nrvars//pergroup):
-        r[(i*pergroup):(i*pergroup+i)] = 1
-    r = np.concatenate((r,r))
-    
-    # gen data
-    Xtrain, ytrain = genPartitionData(nrgroups=nrgroups,
-                                      nirgroups=nirgroups,
-                                      pergroup=pergroup,n=n)
-    Xval, yval = genPartitionData(nrgroups=nrgroups,
-                                  nirgroups=nirgroups,
-                                  pergroup=pergroup,n=n)
-
-    # preprocess 5000 examples
-    normalize = normalizer()
-    Xtrain = normalize(Xtrain)
-    Xval = normalize(Xval, train=False)    
-    # train model and choose parameter based on performance on
-    # validation data
-    w1 = 2-r
-    owl1 = np.arange(r.size) # polytope
-    owl2 = np.zeros(r.size)  # inf norm
-    owl2[0] = 1
-    params_cand = {
-        'lasso': (lasso, (1e-2, 5e-3, 1e-3, 5e-4)),
-        'ridge': (ridge, (1e-2, 5e-3, 1e-3, 5e-4)),
-        'enet': (enet, (1e-2, 5e-3, 1e-3, 5e-4),
-                 tuple(i/10 for i in range(1,10))),
-        'eye': (eye, (r,), (1e-2, 5e-3, 1e-3, 5e-4)),
-        'wlasso': (weightedLasso, (w1,),
-                   (1e-2, 5e-3, 1e-3, 5e-4)),
-        'wridge': (weightedRidge, (w1,),
-                   (1e-2, 5e-3, 1e-3, 5e-4)),
-        'owl': (OWL, (owl1, owl2),
-                (1e-2, 5e-3, 1e-3, 5e-4))
-    }
-
-    hash_map = {}
-    for method in params_cand:
-        m = params_cand[method]
-        f, args = m[0], m[1:]
-        for arg in product(*args):
-            arghash = hashlib.md5(str(arg).encode()).hexdigest()
-            hash_map[arghash] = arg
-            pickle.dump(hash_map, open("val/hashmap","wb"))
-            outdir = "val/" + method + "(" + arghash
-            print(outdir)
-            reg = f(*arg)
-            # train
-            model = Regresser(Predictor(1),
-                              lossfun=lossfun,
-                              regularizer=reg)
-            optimizer = optimizers.AdaDelta()
-            optimizer.setup(model)
-            train_iter = iterators.SerialIterator\
-                         (TupleDataset(Xtrain,ytrain),
-                          batch_size=100,
-                          shuffle=False)
-            updater = training.StandardUpdater(train_iter,
-                                               optimizer)
-            trainer = training.Trainer(updater, (niterations,
-                                                 'epoch'),
-                                       out=outdir)
-            # validate
-            test_iter = iterators.SerialIterator\
-                        (TupleDataset(Xval,yval),
-                         batch_size=100,
-                         repeat=False,
-                         shuffle=False)
-            trainer.extend(extensions.Evaluator(test_iter, model))
-            trainer.extend(extensions.LogReport(log_name="log"))
-            trainer.run()
-
-def paramsSearchCov():
-    nrgroups = 10
-    pergroup = 4
-    rbase = np.zeros(pergroup)
-    rbase[:pergroup//2] = 1
-    r = np.concatenate([rbase for _ in range(nrgroups)])
-    correlations = [i/nrgroups for i in range(nrgroups)]
-
-    blocks = []
-    for c in correlations:
-        base = np.diag(np.ones(pergroup))        
-        base[base==0] = c
-        blocks.append(base)
-
-    C = block_diag(*blocks)
-    theta = np.ones(nrgroups*pergroup)
-
-    n = 2000
-    Xtrain, ytrain = genCovData(C=C, theta=theta, n=n)
-    Xval, yval = genCovData(C=C, theta=theta, n=n)    
+def paramsSearchMd(datagen,
+                   risk,
+                   basedir="val",
+                   methods=['lasso', 'ridge', 'eye', 'owl',
+                            'wlasso', 'wridge', 'enet', 'penalty'],
+                   niterations=1000):
+    Xtrain, ytrain = datagen()
+    Xval, yval = datagen()
     
     # preprocessing
     normalize = normalizer()
@@ -564,33 +471,38 @@ def paramsSearchCov():
     Xval = normalize(Xval, train=False)    
     # train model and choose parameter based on performance on
     # validation data
-    w1 = 2-r
-    owl1 = np.arange(r.size) # polytope
-    owl2 = np.zeros(r.size)  # inf norm
+    w1 = 2-risk
+    # owl1 = np.arange(risk.size) # polytope
+    owl2 = np.zeros(risk.size)  # inf norm
     owl2[0] = 1
     params_cand = {
-        'lasso': (lasso, (1e-2, 5e-3, 1e-3, 5e-4)),
-        'ridge': (ridge, (1e-2, 5e-3, 1e-3, 5e-4)),
-        'enet': (enet, (1e-2, 5e-3, 1e-3, 5e-4),
-                 tuple(i/10 for i in range(1,10))),
-        'eye': (eye, (r,), (1e-2, 5e-3, 1e-3, 5e-4)),
+        'eye': (eye, (risk,), (5e-2, 1e-2, 5e-3)),
         'wlasso': (weightedLasso, (w1,),
-                   (1e-2, 5e-3, 1e-3, 5e-4)),
+                   (1e-1, 1e-2, 5e-3)),
         'wridge': (weightedRidge, (w1,),
-                   (1e-2, 5e-3, 1e-3, 5e-4)),
-        'owl': (OWL, (owl1, owl2),
-                (1e-2, 5e-3, 1e-3, 5e-4))
+                   (1e-1, 1e-2, 5e-3)),
+        'lasso': (lasso, (1e-1, 1e-2, 5e-3, 1e-3, 5e-4)),
+        'ridge': (ridge, (1e-1, 1e-2, 5e-3, 1e-3, 5e-4)),
+        'owl': (OWL, (owl2,),
+                (1e-1, 1e-2, 5e-3, 1e-3, 5e-4)),
+        # 30 + 55 + 55
+        'enet': (enet, (1e-1, 1e-2, 5e-3, 1e-3, 5e-4),
+                 tuple(i/10 for i in range(11))),
+        'penalty': (penalty, (risk,), (1e-1, 1e-2, 5e-3, 1e-3, 5e-4),
+                    tuple(i/10 for i in range(11)))
+
     }
 
+    os.makedirs(basedir, exist_ok=True)           
     hash_map = {}
-    for method in params_cand:
+    for method in methods:
         m = params_cand[method]
         f, args = m[0], m[1:]
         for arg in product(*args):
             arghash = hashlib.md5(str(arg).encode()).hexdigest()
             hash_map[arghash] = arg
-            pickle.dump(hash_map, open("val/hashmap","wb"))
-            outdir = "val/" + method + "(" + arghash
+            pickle.dump(hash_map, open(os.path.join(basedir, "hashmap"),"wb"))
+            outdir = os.path.join(basedir, method + "(" + arghash)
             print(outdir)
             reg = f(*arg)
             # train
@@ -617,139 +529,12 @@ def paramsSearchCov():
             trainer.extend(extensions.Evaluator(test_iter, model))
             trainer.extend(extensions.LogReport(log_name="log"))
             trainer.run()
-
-def paramsSearchR():
-    # sweep fractional r: fix correlation to 0.99, theta to 1
-    c = 0.99 
-    # consider sigmoid, log, exp
-    def clip_(f):
-        def f_(a, n):
-            res = f(a, n)
-            m, M = np.min(res), np.max(res)
-            return (res-m) / (M-m)
-        return f_
-    @clip_
-    def sigmoid_(a, n):
-        x = np.linspace(-1,1,n)
-        return 1/(1+np.exp(-a*x))
-    @clip_
-    def exp_(a, n):
-        x = np.linspace(-1,1,n)
-        return np.exp(a*x)
-    @clip_
-    def log_(a, n):
-        a = 30 * a
-        x = np.linspace(0,1,n)
-        return np.log(a*x+1)
-    funcs = {
-        sigmoid_,
-        exp_,
-        log_
-    }
-    pergroup = 10
-    alphas = [1,3,6,10] 
-    nrgroups = len(alphas) * len(funcs)
-
-    r = np.ones(nrgroups * pergroup)
-    rindex = 0
-    for f in funcs:
-        for a in alphas:
-            r[rindex:rindex+pergroup] = f(a, pergroup)
-            rindex += pergroup
-
-    base = np.diag(np.ones(pergroup))        
-    base[base==0] = c
-    C = block_diag(*([base]*nrgroups))
-    # actually relvant or not are given by theta
-    theta = np.ones(nrgroups*pergroup)
-    
-    n = 2000
-    Xtrain, ytrain = genCovData(C=C, theta=theta, n=n)
-    Xval, yval = genCovData(C=C, theta=theta, n=n)    
-    
-    # preprocessing
-    normalize = normalizer()
-    Xtrain = normalize(Xtrain)
-    Xval = normalize(Xval, train=False)    
-    # train model and choose parameter based on performance on
-    # validation data
-    w1 = 2-r
-    owl1 = np.arange(r.size) # polytope
-    owl2 = np.zeros(r.size)  # inf norm
-    owl2[0] = 1
-    params_cand = {
-        'lasso': (lasso, (1e-2, 5e-3, 1e-3, 5e-4)),
-        'ridge': (ridge, (1e-2, 5e-3, 1e-3, 5e-4)),
-        'enet': (enet, (1e-2, 5e-3, 1e-3, 5e-4),
-                 tuple(i/10 for i in range(1,10))),
-        'eye': (eye, (r,), (1e-2, 5e-3, 1e-3, 5e-4)),
-        'wlasso': (weightedLasso, (w1,),
-                   (1e-2, 5e-3, 1e-3, 5e-4)),
-        'wridge': (weightedRidge, (w1,),
-                   (1e-2, 5e-3, 1e-3, 5e-4)),
-        'owl': (OWL, (owl1, owl2),
-                (1e-2, 5e-3, 1e-3, 5e-4))
-    }
-
-    hash_map = {}
-    for method in params_cand:
-        m = params_cand[method]
-        f, args = m[0], m[1:]
-        for arg in product(*args):
-            arghash = hashlib.md5(str(arg).encode()).hexdigest()
-            hash_map[arghash] = arg
-            pickle.dump(hash_map, open("val/hashmap","wb"))
-            outdir = "val/" + method + "(" + arghash
-            print(outdir)
-            reg = f(*arg)
-            # train
-            model = Regresser(Predictor(1),
-                              lossfun=lossfun,
-                              regularizer=reg)
-            optimizer = optimizers.AdaDelta()
-            optimizer.setup(model)
-            train_iter = iterators.SerialIterator\
-                         (TupleDataset(Xtrain,ytrain),
-                          batch_size=100,
-                          shuffle=False)
-            updater = training.StandardUpdater(train_iter,
-                                               optimizer)
-            trainer = training.Trainer(updater, (niterations,
-                                                 'epoch'),
-                                       out=outdir)
-            # validate
-            test_iter = iterators.SerialIterator\
-                        (TupleDataset(Xval,yval),
-                         batch_size=100,
-                         repeat=False,
-                         shuffle=False)
-            trainer.extend(extensions.Evaluator(test_iter, model))
-            trainer.extend(extensions.LogReport(log_name="log"))
-            trainer.run()
-            
             
 ############ set up regularizers #############
-def experiment2d(num_runs=100):
-    def run_with_reg_wrapper(num_runs):
-        def _f(*args,**kwargs):
-            return run_with_reg(*args, **kwargs, num_runs=num_runs)
-        return _f
-    run = run_with_reg_wrapper(num_runs)
-    # actual run
-    run(enet(0.01, 0.2), "result_enet") 
-    run(eye(array([ 1.,  0.]), 0.01), "result_eye")
-    run(lasso(0.0001), "result_lasso") 
-    run(OWL([2, 1], 0.01), "result_owl")
-    run(penalty(array([ 1.,  0.]), 0.1, 1.0),
-                 "result_penalty")
-    run(ridge(0.001), "result_ridge")
-    run(weightedLasso(array([ 1.,  2.]), 0.01),
-                 "result_wlasso")
-    run(weightedRidge(array([ 1.,  2.]), 0.01), 
-                 "result_wridge")
-
 def generate_risk(nrgroups, nirgroups, pergroup, experiment):
-    if experiment == "binary_r":
+    if experiment == '2d':
+        r = np.array([1,0])
+    elif experiment == "binary_r":
         nrvars = nrgroups * pergroup
         r = np.zeros(nrvars)
         for i in range(0, nrvars//pergroup):
@@ -794,156 +579,6 @@ def generate_risk(nrgroups, nirgroups, pergroup, experiment):
                 rindex += pergroup
     return r
 
-def experimentNd(num_runs=10): # binary r
-    nrgroups = 11
-    nirgroups = nrgroups
-    pergroup = 10
-    n = 5000
-    # construct known and unknown variables
-    r = generate_risk(nrgroups, nirgroups, pergroup, "binary_r")
-    w1 = 2-r
-    owl1 = np.arange(r.size) # polytope
-    owl2 = np.zeros(r.size)  # inf norm
-    owl2[0] = 1
-    # gen data
-    datagen = lambda: genPartitionData(nrgroups=nrgroups,
-                                       nirgroups=nirgroups,
-                                       pergroup=pergroup,n=n)
-    def run_with_reg_wrapper(num_runs, datagen):
-        def _f(*args,**kwargs):
-            return run_with_reg(*args, **kwargs,
-                                num_runs=num_runs,
-                                datagen=datagen)
-        return _f
-    run = run_with_reg_wrapper(num_runs, datagen)    
-    # run
-    run(eye(r, 0.05), outdir="result_eye")
-    run(enet(0.01, 0.1), outdir="result_enet")
-    run(lasso(0.0005), outdir="result_lasso")
-    run(ridge(0.01), outdir="result_ridge")
-    run(weightedLasso(w1, 0.005), outdir="result_wlasso")
-    run(weightedRidge(w1, 0.01), outdir="result_wridge")
-    run(OWL(owl1, 0.001), outdir="result_owl")
-    
-def experimentNdCov(num_runs=10):
-    # sweep correlation from 0 to 0.9, 1 case is shown in 2d
-    # fix r and theta, all relevant b/c irrelvant case
-    # is explored in the previous round
-    # evaluate by correlation weighted kl/emd metric
-    nrgroups = 10
-    nirgroups = 0
-    pergroup = 4
-
-    r = generate_risk(nrgroups, nirgroups, pergroup, "corr")
-
-    correlations = [i/nrgroups for i in range(nrgroups)]
-    blocks = []
-    for c in correlations:
-        base = np.diag(np.ones(pergroup))        
-        base[base==0] = c
-        blocks.append(base)
-
-    n = 2000
-    C = block_diag(*blocks)
-    theta = np.ones(nrgroups*pergroup)
-    X, y = genCovData(C=C, theta=theta, n=n)
-
-    w1 = 2-r
-    owl1 = np.arange(r.size) # polytope
-    owl2 = np.zeros(r.size)  # inf norm
-    owl2[0] = 1
-    # gen data
-    datagen = lambda: genCovData(C=C, theta=theta, n=n)
-
-    def run_with_reg_wrapper(datagen):
-        def _f(*args,**kwargs):
-            return run_with_reg(*args, **kwargs,
-                                datagen=datagen,
-                                num_runs=num_runs,
-                                resume=True)
-        return _f
-    run = run_with_reg_wrapper(datagen)    
-    # run
-    run(eye(r, 0.05), outdir="result_eye")
-    run(enet(0.01, 0.1), outdir="result_enet")
-    run(lasso(0.0005), outdir="result_lasso")
-    run(ridge(0.01), outdir="result_ridge")
-    run(weightedLasso(w1, 0.005), outdir="result_wlasso")
-    run(weightedRidge(w1, 0.01), outdir="result_wridge")
-    run(OWL(owl1, 0.001), outdir="result_owl")     
-
-def experimentNdR():
-    # sweep fractional r: fix correlation to 0.99, theta to 1
-    c = 0.99 
-    # consider sigmoid, log, exp
-    def clip_(f):
-        def f_(a, n):
-            res = f(a, n)
-            m, M = np.min(res), np.max(res)
-            return (res-m) / (M-m)
-        return f_
-    @clip_
-    def sigmoid_(a, n):
-        x = np.linspace(-1,1,n)
-        return 1/(1+np.exp(-a*x))
-    @clip_
-    def exp_(a, n):
-        x = np.linspace(-1,1,n)
-        return np.exp(a*x)
-    @clip_
-    def log_(a, n):
-        a = 30 * a
-        x = np.linspace(0,1,n)
-        return np.log(a*x+1)
-    funcs = {
-        sigmoid_,
-        exp_,
-        log_
-    }
-    pergroup = 10
-    alphas = [1,3,6,10] 
-    nrgroups = len(alphas) * len(funcs)
-    nirgroups = 0
-    
-    r = np.ones(nrgroups * pergroup)
-    rindex = 0
-    for f in funcs:
-        for a in alphas:
-            r[rindex:rindex+pergroup] = f(a, pergroup)
-            rindex += pergroup
-
-    base = np.diag(np.ones(pergroup))        
-    base[base==0] = c
-    C = block_diag(*([base]*nrgroups))
-    # actually relvant or not are given by theta
-    theta = np.ones(nrgroups*pergroup)
-    
-    n = 2000
-    X, y = genCovData(C=C, theta=theta, n=n)
-
-    w1 = 2-r
-    owl1 = np.arange(r.size) # polytope
-    owl2 = np.zeros(r.size)  # inf norm
-    owl2[0] = 1
-    # gen data
-    datagen = lambda: genCovData(C=C, theta=theta, n=n)
-
-    def run_with_reg_wrapper(datagen):
-        def _f(*args,**kwargs):
-            return run_with_reg(*args, **kwargs,
-                                datagen=datagen,
-                                num_runs=num_runs,
-                                resume=True)
-        return _f
-    run = run_with_reg_wrapper(datagen)    
-    # run
-    run(eye(r, 0.05), outdir="result_eye")
-    run(enet(0.01, 0.1), outdir="result_enet")
-    run(lasso(0.0005), outdir="result_lasso")
-    run(ridge(0.01), outdir="result_ridge")
-    run(weightedLasso(w1, 0.005), outdir="result_wlasso")
-    run(weightedRidge(w1, 0.01), outdir="result_wridge")
-    run(OWL(owl1, 0.001), outdir="result_owl")     
     
 ############# helpers
 def distribution_normalizer(p, q):
@@ -1076,61 +711,26 @@ def reportTheta(fn, f=lambda x: x.mean(), method="kl",
     return tagged_stats
 
 #------------temporary function###################
-def tmp():
-    # sweep fractional r: fix correlation to 0.99, theta to 1
-    c = 0.99 
-    # consider sigmoid, log, exp
-    def clip_(f):
-        def f_(a, n):
-            res = f(a, n)
-            m, M = np.min(res), np.max(res)
-            return (res-m) / (M-m)
-        return f_
-    @clip_
-    def sigmoid_(a, n):
-        x = np.linspace(-1,1,n)
-        return 1/(1+np.exp(-a*x))
-    @clip_
-    def exp_(a, n):
-        x = np.linspace(-1,1,n)
-        return np.exp(a*x)
-    @clip_
-    def log_(a, n):
-        a = 30 * a
-        x = np.linspace(0,1,n)
-        return np.log(a*x+1)
-    funcs = {
-        sigmoid_,
-        exp_,
-        log_
-    }
+def _test(signoise=0.2):
+    #################
+    nrgroups = 11
+    nirgroups = nrgroups
     pergroup = 10
-    alphas = [1,3,6,10] 
-    nrgroups = len(alphas) * len(funcs)
-
-    r = np.ones(nrgroups * pergroup)
-    rindex = 0
-    for f in funcs:
-        for a in alphas:
-            r[rindex:rindex+pergroup] = f(a, pergroup)
-            rindex += pergroup
-
-    base = np.diag(np.ones(pergroup))        
-    base[base==0] = c
-    C = block_diag(*([base]*nrgroups))
-
-    # actually relvant or not are given by theta
-    n=2000
-    theta = np.ones(nrgroups*pergroup)
-    X, y = genCovData(C=C, theta=theta, n=n)
-
-    w1 = 2-r
-    owl1 = np.arange(r.size) # polytope
-    owl2 = np.zeros(r.size)  # inf norm
-    owl2[0] = 1
+    n = 5000
+    # setup
+    gridSearch = paramsSearchMd
+    risk = generate_risk(nrgroups, nirgroups, pergroup, "binary_r")
+    basedir = 'val_binaryR'
     # gen data
-    datagen = lambda: genCovData(C=C, theta=theta, n=n)
+    base = np.diag(np.ones(pergroup))       
+    base[base==0] = 0.99
+    C = block_diag(*([base]*(nrgroups+nirgroups)))
+    theta = np.zeros((nrgroups + nirgroups) * pergroup)
+    theta[:nrgroups*pergroup] = 1
+    datagen = lambda: genCovData(C=C, theta=theta,
+                                 n=n, signoise=signoise)
 
+    ###################
     def run_with_reg_wrapper(datagen):
         def _f(*args,**kwargs):
             return run_with_reg(*args, **kwargs,
@@ -1139,5 +739,48 @@ def tmp():
                                 resume=False)
         return _f
     run = run_with_reg_wrapper(datagen)    
-    return run, r
+    return run, risk
+
+def tmp(signoise=5, d=2, datagen=None):
+    ################
+    gridSearch = paramsSearch2d
+    risk = np.ones(d) #generate_risk(0, 0, 0, '2d')
+    if not datagen:
+        datagen = lambda: gen2ddata(signoise=signoise, n=100, d=d, plot=True)
+
+    ################
+    def run_with_reg_wrapper(datagen):
+        def _f(*args,**kwargs):
+            return run_with_reg(*args, **kwargs,
+                                datagen=datagen,
+                                printreport=True,
+                                resume=False)
+        return _f
+    run = run_with_reg_wrapper(datagen)    
+    return run, risk
     
+def gen2ddata(plot=False, name=None, d=2,
+              signoise=0.2, scaleh=2, munoise=0,
+              left=-2.5, right=1.5, n=100):
+    mu = (left + right) / 2    
+    h = np.linspace(left,right,n).reshape(n,1)
+    X = np.repeat(h, d, 1)
+    noise = np.random.randn(n,1)  * signoise + munoise
+    alpha = np.diag(np.random.randint(1,scaleh,size=d))
+    X = X.dot(alpha)
+
+    # y = X.dot(0.5*np.ones(d)[:,None]) + noise > mu
+
+    y = sigmoid(X.dot(np.ones(d)[:,None]) + noise)
+    for i in range(n):
+        y[i] = np.random.binomial(1,y[i]) # bernoulli
+
+    if plot and d==2:
+        plt.scatter(X[:,0],X[:,1],c=y.astype(np.int64),alpha=0.5)
+        plt.axvline(x=mu*alpha[0,0], color='k', linestyle='--')
+        plt.axhline(y=mu*alpha[1,1], color='k', linestyle='--')        
+        plt.title("dataset: $X_i$=$\\alpha_i$h+N(0,$\sigma$)")
+        name = name or 'data'
+        plt.savefig('figures/'+name+'.png', bbox_inches='tight')
+        plt.show()        
+    return X.astype(np.float32), y.astype(np.float32).reshape(y.size,1)

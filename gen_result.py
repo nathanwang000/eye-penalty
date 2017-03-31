@@ -1,27 +1,29 @@
-import os
 import numpy as np
 import matplotlib.pyplot as plt
+import os, json
+from plotResult import extract
 
 regs = ['eye','wlasso', 'wridge',
-        'lasso', 'ridge',
-        'owl', 'enet'] # penalty
+        'lasso', #'ridge',
+        'owl', 'enet', 'penalty']
 
 NUM_COLORS = len(regs)
 cm = plt.get_cmap('gist_rainbow')
 colors = [cm(1.*i/NUM_COLORS) for i in range(NUM_COLORS)]
 
-def loadData(method):
-    data = np.load('result_'+method+'/theta.npy')
+def loadData(method, basedir="./"):
+    fname = os.path.join(basedir, 'result_'+method+'/theta.npy')
+    data = np.load(fname)
     return data[~np.isnan(data).any(axis=1)]
 
 nbins = 50
 
-def plotFeature(f_num, nbins=50, savefig=False):
+def plotFeature(f_num, nbins=50, savefig=False, basedir="./", regs=regs):
     for i, reg in enumerate(regs):
-        data = loadData(reg)
+        data = loadData(reg, basedir=basedir)
         plt.hist(data[:,f_num], nbins, alpha=0.5,
                  label=reg, color=colors[i])
-        tstr = "$x_%d$ distribution" % f_num
+        tstr = r"$\theta_%d$ distribution" % f_num
         plt.title(tstr)
         plt.legend()
     if savefig: plt.savefig('figures/'+tstr.replace(" ","_")+".png")
@@ -31,14 +33,25 @@ def plotFeature(f_num, nbins=50, savefig=False):
 # plotFeature(1) # x1
 # plotFeature(2) # b
 
+def plotRatio(nbins=50, savefig=False, basedir="./", regs=regs):
+    for i, reg in enumerate(regs):
+        data = loadData(reg, basedir=basedir)
+        plt.hist(data[:,0] / data[:, 1], nbins, alpha=0.5,
+                 label=reg, color=colors[i])
+        tstr = r"$\frac{\theta_0}{\theta_1}$ distribution"
+        plt.title(tstr)
+        plt.legend()
+    if savefig: plt.savefig('figures/'+tstr.replace(" ","_")+".png")
+    else: plt.show()
+
 # nfeatures for x0 x1 b is 3
-def plotBar(n_features, savefig=False): 
+def plotBar(n_features, savefig=False, basedir="./", regs=regs): 
     rects = []
     means = []
     stds  = []
     # fill in means and stds
     for reg in regs:
-        data = loadData(reg)
+        data = loadData(reg, basedir=basedir)
         means.append([np.mean(data[:, i]) for i \
                       in range(n_features)])
         stds.append([np.std(data[:, i]) for i \
@@ -72,33 +85,71 @@ def plotBar(n_features, savefig=False):
     
 # plotBar(3, True)
 
+def plotPerformance(basedir="./", regs=regs, title=""):
+    # todo: to redo
+    rects = []
+    means = []
+    stds  = []
+    criteria = [
+        "validation/main/loss",
+        "validation/main/accuracy",
+        "validation/main/auroc"
+    ]
+
+    # fill in means and stds
+    for reg in regs:
+        data = []
+        dirname = os.path.join(basedir, "result_"+reg)
+        for fn in os.listdir(dirname):
+            if fn.startswith("log_"):
+                record = json.load(open(os.path.join(dirname, fn)))
+                extractRecord = extract(record)
+                data.append([extractRecord(c)[-1] for c in criteria])
+        old_data = np.array(data)
+        data = old_data[np.isfinite(old_data).all(axis=1)]
+        delta = old_data.shape[0] - data.shape[0]
+        if delta > 0: print(reg, "contains %d/%d" % (delta, old_data.shape[0]), "nan")
+        means.append([np.mean(data[:, i]) for i \
+                      in range(len(criteria))])
+        stds.append([np.std(data[:, i]) for i \
+                     in range(len(criteria))])
+    # general setting
+    fig, ax = plt.subplots()
+    index = np.arange(len(criteria))
+    bar_width = 1.0 / (len(regs)+1)
+    opacity = 0.4
+    error_config = {'ecolor': '0.3'}
+    # fill in rects
+    for i, reg in enumerate(regs):
+        bar = plt.bar(index + i * bar_width,
+                      means[i], bar_width,
+                      color=colors[i],
+                      alpha=opacity,
+                      yerr=stds[i],
+                      error_kw=error_config,
+                      label=reg)
+        rects.append(bar)
+    plt.xlabel('criteria')
+    plt.ylabel('value')
+    plt.title(title)
+    plt.xticks(index + (len(regs)/2)*bar_width, criteria)
+    plt.legend(bbox_to_anchor=(-0.2, 1))
+    plt.tight_layout()
+    plt.show()
+    plt.clf()
+
 ################### for nd case #################
-from comb_loss import reportKL, reportTheta, generate_risk
+from comb_loss import reportKL, reportTheta
 
-EXPERIMENT_SETTINGS = {
-    "binary_r": (11,11,10),
-    "corr": (10,0,4),
-    "frac_r": (12,0,10)
-}
-
-def gen_nd_loss_csv(regs=regs, fn=None, stats="mean", method='kl',
-                    experiment="binary_r", basedir=None):
-    basedir = basedir or "./"
+def gen_nd_loss_csv(regs=regs, fn=None, stats="mean", method='kl'):
     if not fn: fn="tmp_"+stats+".csv"
     from itertools import zip_longest
-    nrgroups, nirgroups, pergroup = EXPERIMENT_SETTINGS[experiment]
-    
     f = {"mean": lambda x: x.mean(),
          "var": lambda x: x.var()
     }[stats]
     
     lines = [["method"]+regs]
-    iterables = tuple(reportKL(os.path.join(basedir, "result_"+reg),
-                               f=f, method=method,
-                               nrgroups=nrgroups,
-                               nirgroups=nirgroups,
-                               pergroup=pergroup,
-                               experiment=experiment)
+    iterables = tuple(reportKL("result_"+reg, f=f, method=method)
                       for reg in regs)
     prevtag = "relevant"
     count = 0
@@ -114,22 +165,13 @@ def gen_nd_loss_csv(regs=regs, fn=None, stats="mean", method='kl',
     with open(fn,'w') as f:
         f.write("\n".join([",".join(l) for l in lines]))
 
-def gen_nd_weight_csv(regs=regs, fn=None, experiment="binary_r",
-                      basedir=None):
-    basedir = basedir or "./"    
+def gen_nd_weight_csv(regs=regs, fn=None):
     if not fn: fn="tmp_weights.csv"
     from itertools import zip_longest
-    nrgroups, nirgroups, pergroup = EXPERIMENT_SETTINGS[experiment]
-    
     f = lambda x: x.mean()
 
-    lines = [["method"]+regs]  
-    iterables = tuple(reportTheta(os.path.join(basedir, "result_"+reg),
-                                  f=f,
-                                  nrgroups=nrgroups,
-                                  nirgroups=nirgroups,
-                                  pergroup=pergroup,
-                                  experiment=experiment)
+    lines = [["method"]+regs]
+    iterables = tuple(reportTheta("result_"+reg, f=f)
                       for reg in regs)
     prevtag = "relevant"
     count = 0
@@ -145,22 +187,13 @@ def gen_nd_weight_csv(regs=regs, fn=None, experiment="binary_r",
     with open(fn,'w') as f:
         f.write("\n".join([",".join(l) for l in lines]))
 
-def gen_nd_weight_var_csv(regs=regs, fn=None,  basedir=None,
-                          f=lambda x: x.mean(1).var(),
-                          experiment="binary_r"):
-
-    basedir = basedir or "./"    
+def gen_nd_weight_var_csv(regs=regs, fn=None,
+                          f=lambda x: x.mean(1).var()):
     if not fn: fn="tmp_weights_var.csv"
     from itertools import zip_longest
-    nrgroups, nirgroups, pergroup = EXPERIMENT_SETTINGS[experiment]
 
     lines = [["method"]+regs]
-    iterables = tuple(reportTheta(os.path.join(basedir, "result_"+reg),
-                                  f=f,
-                                  nrgroups=nrgroups,
-                                  nirgroups=nirgroups,
-                                  pergroup=pergroup,
-                                  experiment=experiment) 
+    iterables = tuple(reportTheta("result_"+reg, f=f)
                       for reg in regs)
     prevtag = "relevant"
     count = 0
@@ -176,21 +209,13 @@ def gen_nd_weight_var_csv(regs=regs, fn=None,  basedir=None,
     with open(fn,'w') as f:
         f.write("\n".join([",".join(l) for l in lines]))
         
-# sweep binary r = {nrgroups=11, nirgroups=11, pergroup=10}
-# sweep corr = {nrgroups=10, nirgroups=0, pergroup=4}
-# sweep frac r = {nrgroups=12, nirgroups=0, pergroup=10}
-def reportNdLoss(regs=regs,tag="relevant", method="kl", basedir=None,
-                 experiment="binary_r"):
-    nrgroups, nirgroups, pergroup = EXPERIMENT_SETTINGS[experiment]
-    basedir = basedir or "./"
+
+def reportNdLoss(regs=regs,tag=None, method="kl"):
     # method can be kl or emd
     if not tag: tagf=lambda x: True
     else: tagf=lambda x: tag==x
     for reg in regs:
-        fn_path = os.path.join(basedir, "result_"+reg)
-        g = reportKL(fn_path, f=lambda x:x.mean(), method=method,
-                     nrgroups=nrgroups, nirgroups=nirgroups,
-                     pergroup=pergroup, experiment=experiment)
+        g = reportKL("result_"+reg, f=lambda x:x.mean(), method=method)
         print(reg+":", sum(list(map(lambda x: x[1],
                                     filter(lambda x: tagf(x[0]), g)))))
 

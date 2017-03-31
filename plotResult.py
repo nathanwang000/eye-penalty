@@ -8,7 +8,8 @@ import math
 import pickle
 
 dirname = 'val' # the default
-regs = ['lasso', 'ridge', 'enet', 'penalty',
+regs = ['lasso', #'ridge',
+        'enet', 'penalty',
         'wlasso', 'wridge', 'owl', 'eye']
 
 def extract(record):
@@ -16,7 +17,7 @@ def extract(record):
         return list(map(lambda e: e[item],record))
     return extractRecord
 
-def plotResult(fn, title=None):
+def plotResult(fn, title=None, save=True):
     record = json.load(open(fn))
     
     extractRecord = extract(record)
@@ -31,8 +32,10 @@ def plotResult(fn, title=None):
     plt.legend()
     if title: plt.title(title + " loss")
     else: plt.title("loss")
-    plt.savefig(path.join(path.dirname(fn),"loss_plot.png"))
-    plt.clf()
+    if save:
+        plt.savefig(path.join(path.dirname(fn),"loss_plot.png"))
+        plt.clf()
+    else: plt.show()
 
     # acc
     plt.plot(valacc, label='val acc')
@@ -40,8 +43,11 @@ def plotResult(fn, title=None):
     plt.legend()
     if title: plt.title(title + " accuracy")
     else: plt.title("acurracy")
-    plt.savefig(path.join(path.dirname(fn),"acc_plot.png"))
-    plt.clf()
+    if save:
+        plt.savefig(path.join(path.dirname(fn),"acc_plot.png"))
+        plt.clf()        
+    else: plt.show()
+
 
 # plots for seeing if training complete
 def genplots(dirname=dirname):
