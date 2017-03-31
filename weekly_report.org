@@ -1,5 +1,5 @@
 #+TITLE: Incorporating known risk factors into models
-#+DATE: <2017-02-23 Thursday>
+#+DATE: <2017-03-6 Monday>
 #+AUTHOR: Jiaxuan Wang
 #+EMAIL: jiaxuan@umich
 #+OPTIONS: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline author:t c:nil
@@ -12,561 +12,392 @@
 #+KEYWORDS:
 #+LANGUAGE: en
 #+SELECT_TAGS: export
-
-* objective
-Incorporating known risk factors with unknown risk factors in predicting outcome. 
-In the case of choosing between correlated variables, the model should favor
-known risk factors.
-
-* measuring success
-
-Fixing the level of performance, the task of learning is to allocate weights to
-features so that desired structures are kept. A familiar example is lasso
-regression where the diamond shaped contour forces weights to be sparse so that
-they are interpretable in a sense. Another example is ridge regression where it
-corresponds to having a gaussian prior on weights. Learning is really a
-combination of data and domain expertise. Each model implicitly carries
-assumptions into the learning task and there's no universal consistent algorithm
-that works best under all distributions (no free lunch thm). However, there is
-one thing that for sure we want no matter what assumptions we make, that is the
-credibility of the model. In addition to having good performance, we want the
-model to be consistent with the current literature. More concretely, we want the
-model to place high weights on relevant and known features while keeping the
-unknown relevant features sparse. This whole process should be done in a data
-driven way so that the known risk factors are merely suggestions for the model
-to consider instead of forced constraints. In this spirit, we list the following
-properties of a credible model:
-
-a) credibility should not come at the cost of performance
-b) irrelevant features whether known or unknown should have low weights
-c) within a group of dependent features, weights of known risk factors should be dense
-d) within a group of dependent features of all unknown risk factors, the weights
-should be sparse
-
-criteria a) are acheived by grid searching over validation set so that
-models in consideration has similar level of performance. b) is acheive by
-constraining on the size of parameters which all regularizations do.
-
-For c) and d) we measure the KL divergence in each group of dependent features.
-
-Here I give a typical exmaples of what I mean by measuring KL divergence in a
-group of dependent features
-
-assume $r=[1,1,0,0]^T$ and $\theta=[0.1, 0.2, -0.01, 0.02]^T$ (\theta
-excluding b term), we first normalize each vector so that their $||\cdot||_1$
-is 1.
-
-$r'=[0.5, 0.5, 0, 0]^T$, $\theta' = [ 0.32258065,  0.64516129,  0.03225806,
-0.06451613]^T$
-
-To avoid 0 appearing in log of KL divergence calculation, a small smooth factor
-of 1e-6 is added to any vector with 0, renormalizing giving
-
-$r''=[  4.99999000e-01,   4.99999000e-01,   9.99996000e-07,
-         9.99996000e-07]^T$, $\theta'' = [ 0.32258065,  0.64516129,  0.03225806,
-0.06451613]^T$
-
-Then $KL(r''||\theta'')$ is the reported result in each dependent group,
-where $KL(x||y) = \sum_{i} p(x_i) \log \frac{p(x_i)}{p(y_i)}$
-
-In the case where r is all 0 in relevant feature group, I give
-$min_{v \in \textit{one hot vectors}} KL(v||\theta'')$ as a loss as to encourage
-sparse feature.
-
-* approaches taken
-
-** old approach 
-
-0.5 * \lambda_2 ||r * \theta||_2^2 + \lambda_1 ||(1-r) * \theta||_1
-where r \in {0,1}^d, \theta \in R^d
-
-[[./contour/penalty.png]]
-
-** new approach
-
-Fix a convex body that have property of the previous contour plot such that the
-angle at the end point is 45 degree. The following is the contour plot of its
-induced norm
-
-[[./contour/eye.png]]
-
-
-
-In fact, by relaxing the constraint of r over binary to float, we can recover
-enet (setting r=0.5 * 1). Even without extending r, we can recover ridge (r=1) 
-and lasso (r=0)
-
-[[./contour/eye_enet.png]]
-
-[[./contour/eye_ridge.png]]
-
-[[./contour/eye_lasso.png]]
-
-* experiments
-** set up
-*** nd data generation (genPartitionData)
-
-Data n = 5000
-
-n relevant groups (nrgroups) = 11
-
-n irrelevant group (nirgroups) = 11
-
-correlated variables pergroup (npergroup) = 10
-
-h_i ~ Uniform(-3, 1, n)
-
-\theta_i = 1 \forall i
-
-x_{i,j} ~ Uniform(1..2) h_i + N(0, 0.2) for i \in [n] for j \in [npergrop]
-
-y = $\frac{\sum_{i=1}^{nrgroups} h_i \theta_i}{\sum_{i=1}^{nrgroups} |\theta_i|}$ > -1
-
-r (known risk factors): for each correlated variable group, putting in one
-more known risk factor than the previous group
-
-Loss function is the negative loss likelihood of the logistic regression model.
-
-Optimizer: AdaDelta
-
-Number of Epoch: 1000
-
-Regulizers: elastic net, lasso, ridge, OWL, weighted lasso, weighted ridge, 
-eye penalty
-
-*** 2d data generation
-
-Data n = 100:
-
-[[./figures/data.png]]
-
-h = linspace(-2.5, 1, n)
-
-x_0 ~ Uniform(1..4) h + N(0, 0.2)
-
-x_1 ~ Uniform(1..4) h + N(0, 0.2)
-
-y = h > 0.5
-
-r (known risk factors) = [1, 0]
-
-Loss function is the negative loss likelihood of the logistic regression model.
-
-Optimizer: AdaDelta
-
-Number of Epoch: 1000
-
-Regulizers: elastic net, lasso, ridge, OWL, weighted lasso, weighted ridge,
-penalty, eye penalty
-
-*** eye penalty
-
-q(\theta) := 2 \beta ||(1-r) * \theta||_1 + $
-(1-\beta) ||r*\theta||_2^2
-
-pena(\theta) := \alpha q(\theta)
-
-where r \in {0,1}^d, \theta \in R^d, \alpha \in R_{+}, \beta \in (0,1) (\beta is also
-called l1_ratio in this text)
-
-For any constant c
-
-pena(\theta) = c
-
-is convex because pena is convex (addition of positively weighted norms)
-
-similarly, q(\theta) = c is also convex
-
-c can be chosen so that slope in the first quadrant between known risk
-factor x and unknown risk factor is -1
-
-we define eye norm as a an atomic norm $||\cdot||_A$ as introduced in [[https://people.eecs.berkeley.edu/~brecht/papers/2010-crpw_inverse_problems.pdf][Venkat et al.]]
-
-$||x||_A := \inf\{t>0|x \in t conv(A)\}$
-
-Let $A=\{x|q(x) = \frac{\beta^2}{1-\beta}\}$, we get the eye
-penalty
-
-Note that A is already a convex set, equivalently we write
-
-$eye(x) = \inf\{t>0|x \in t\{ x | q(x) = \frac{\beta^2}{1-\beta}\}\}$
-
-**** derivation
-
-The main intuition is to set c so that the slope in the first quadrant between known risk
-factor x and unknown risk factor is -1. Since we only care about this
-interaction between known and unknown risk factors and that {x|pena(x)=c} is
-symmetric about origin, WLOG, we let y be the unknown feature and x be the known
-risk factor with constraint y \geq 0, x \geq 0. 
-
-\begin{align}
-&\  \alpha [2 \beta y + (1-\beta) x^2] = c \\
-&\rightarrow 2 \beta y + (1-\beta) x^2 = \frac{c}{\alpha} \\
-&\rightarrow y = \frac{c}{2\alpha\beta} - \frac{(1-\beta) x^2}{2 \beta}\\
-&\rightarrow y = 0 \Rightarrow x = \sqrt{\frac{c}{\alpha(1-\beta)}}\\ 
-&\rightarrow f'(x) = -\frac{(1-\beta)}{\beta}x\\
-&\rightarrow f'(\sqrt{\frac{c}{\alpha(1-\beta)}}) = -\frac{1-\beta}{\beta} \sqrt{\frac{c}{\alpha(1-\beta)}} = -1 \\
-&\rightarrow c = \frac{\alpha\beta^2}{1-\beta}\\
-&\rightarrow 2 \beta y + (1-\beta) x^2 = \frac{\beta^2}{1-\beta}
-\end{align}
-
-Thus, we just need q(x) = $\frac{\beta^2}{1-\beta}$
-
-**** properties:
-a) A is symmetric about origin (x \in A then -x \in A), so this is a norm
-1) eye(t \theta) = |t| eye(\theta)
-2) eye(\theta + \beta) \leq eye(\theta) + eye(\beta)
-3) eye(\theta) = 0 iff \theta = 0
-
-b) \beta doesn't affect the shape of contour, so no need to
-search over \beta
-
-proof: 
-
-consider the contour B_1 = {x: eye_{\beta_1}}(x) = t} and
-B_2 = {x: eye_{\beta_2}}(x) = t}
-
-We want to show B_1 is similar to B_2
-
-case1: t = 0, then B_1 = B_2 = {0} by property a3
-
-case2: t \neq 0
-
-we can equivalently write B_1 and B_2 as: (by definition and a1 and q convex)
-
-B_1 = t {x: x \in {x | q_{\beta_1}(x) = $\frac{\beta_1^2}{1-\beta_1}$ }}
-
-B_2 = t {x: x \in {x | q_{\beta_2}(x) = $\frac{\beta_2^2}{1-\beta_2}$ }}
-
-let B_1' = {x: x \in {x | q_{\beta_1}(x) = $\frac{\beta_1^2}{1-\beta_1}$ }}
-and B_2' = {x: x \in t {x | q_{\beta_2}(x) = $\frac{\beta_1^2}{1-\beta_2}$ }}
-
-Claim: B_2' = $\frac{\beta_2 (1-\beta_1)}{\beta_1 (1-
-beta_2)}$ B_1'
-
-It should be clear that if this claim is true then B_1 is similar to B_2
-and we are done
-
-take x \in B_1'
-
-then q_{\beta_1}(x) = 2 \beta_1 ||(1-r) * x||_1 +
-(1-\beta_1) ||r*x||_2^2 = $\frac{\beta_1^2}{1-\beta_1}$
-
-let x' = $\frac{\beta_2 (1-\beta_1)}{\beta_1 (1-\beta_2)}$ x
-
-\begin{align}
-q_{\beta_2}(x') &= 2 \beta_2 ||(1-r) * x'||_1 +
- (1-\beta_2) ||r*x'||_2^2\\
-&= \frac{2 \beta_2^2 (1-\beta_1)}{\beta_1 (1-\beta_2)} ||(1-r) * x||_1 + 
-\frac{\beta_2^2 (1-\beta_1)^2}{\beta_1^2 (1-\beta_2)} ||r*x||_2^2\\
-&= \frac{\beta_2^2 (1-\beta_1)}{\beta_1^2 (1-\beta_2)} (2 \beta_1 ||(1-r) * x||_1 +
-(1-\beta_1) ||r*x||_2^2)\\
-&= \frac{\beta_2^2 (1-\beta_1)}{\beta_1^2 (1-\beta_2)} \frac{\beta_1^2}{1-\beta_1} \\
-&= \frac{\beta_2^2}{1-\beta_2}
-\end{align}
-
-so x' \in B_2'. Thus $\frac{\beta_2 (1-\beta_1)}{\beta_1 (1-
-beta_2)}$ B_1' \subset B_2'. The other direction is similarly proven.
-
-
-
-
-
-
-
-
-
-**** extending r to [0,1]^d 
-At times, it makes sense for risk factor to be fractionally weighted (eg. odds
-ratio in medical documents)
-
-varying r_1 and r_2
-
-r_1 = 0.0
-
-[[./contour/eye_0_0.png]]
-
-r_1 = 0.1
-
-[[./contour/eye_0_1.png]]
-
-r_1 = 0.2
-
-[[./contour/eye_0_2.png]]
-
-r_1 = 0.3
-
-[[./contour/eye_0_3.png]]
-
-r_1 = 0.4
-
-[[./contour/eye_0_4.png]]
-
-r_1 = 0.5
-
-[[./contour/eye_0_5.png]]
-
-r_1 = 0.6
-
-[[./contour/eye_0_6.png]]
-
-r_1 = 0.7
-
-[[./contour/eye_0_7.png]]
-
-r_1 = 0.8
-
-[[./contour/eye_0_8.png]]
-
-r_1 = 0.9
-
-[[./contour/eye_0_9.png]]
-
-r_1 = 1.0
-
-[[./contour/eye_1_0.png]]
-
-*** elastic net
-\alpha * (c * ||\theta||_1 + 0.5 * (1 - c) * ||\theta||_2^2) where c is a scaler
-
-[[./contour/enet_add.png]] 
-
-*** lasso
-\alpha * ||\theta||_1
-
-[[./contour/lasso_add.png]]
-
-*** ridge
-0.5 * \alpha * ||\theta||_2^2
-
-[[./contour/ridge_add.png]]
-
-*** OWL
-\alpha * \sum_{i=1}^n w_i |x|_{[i]} where w \in K_{m+} (monotone nonnegative cone)
-
-[[./contour/OWL_w1=2>w2=1.png]]
-
-degenerated case: back to lasso
-
-[[./contour/OWL_w1=1=w2=1.png]]
-
-degenerated case: back to l_{\inf}
-
-[[./contour/OWL_w1=2>w2=0.png]]
-
-some properties:
-
-generalization of OSCAR norm
-
-symmetry with respect to signed permutations
-
-in the regular case, the minimal atomic set for this norm is known (the corners
-are easily calculated)
-
-*** weighted lasso
-\alpha * ||w * \theta||_1 where w \in R_+^d
-
-[[./contour/wlasso_add.png]]
-
-*** weighted ridge 
-0.5 * \alpha * ||w * \theta||_2^2 where w \in R_{+}^{d}
-
-[[./contour/wridge_add.png]]
-
-*** old penalty
-\alpha * (0.5 * (1-c) * ||r * \theta||_2^2 + c * ||(1-r) * \theta||_1)
-where r \in {0,1}^d, \theta \in R^d, \alpha \in R, c \in R
-
-[[./contour/penalty_add.png]]
-
-
-** running procedure
-
-*** first run (regularized b)
-
-b regularized
-
-fix hyperparmeters to predefined value
-
-repeat the following 100 times:
-
-generate data (x2 = 2x1), run the selected regularizers, record \theta
-
-*** second run (unregularized b, validation)
-
-b unregularized
-
-generate two datasets (x2 = 2x1), one for training, one for validation
-
-parameter search over the different hyperparams of the regularizers
-
-for each regularizer, use the hyperparmeters that acheives the minimal loss
-
-repeat the following 100 times:
-
-generate data, run the selected regularizers, record \theta
-
-*** third run (data normalized, eye penalty)
-
-b unregularized
-
-generate two datasets (x2 = 2x1), one for training, one for validation
-
-normalize the data to 2 mean and 2 variance (validaton data is normalized
-using mean and variance for the training data)
-
-parameter search over the different hyperparams of the regularizers
-
-for each regularizer, use the hyperparmeters that acheives the minimal loss
-
-repeat the following 100 times:
-
-generate data, normalize data, run the selected regularizers, record \theta
-
-The choosing criteria is still loss b/c AUROC is always going to be 1 in the
-deterministic case:
-
-[[./old_figures/$x_0$_distribution.png]]
-
-[[./old_figures/$x_1$_distribution.png]]
-
-[[./old_figures/$x_2$_distribution.png]]
-
-[[file:old_figures/avg_reg.png]]
-
-*** Fourth run (noise added)
-
-b unregularized
-
-generate two datasets, one for training, one for validation
-
-normalize the data to 2 mean and 2 variance (validaton data is normalized
-using mean and variance for the training data)
-
-parameter search over the different hyperparams of the regularizers
-
-for each regularizer, use the hyperparmeters that acheives the minimal loss
-
-repeat the following 100 times:
-
-generate data (x_i = Uniform(0..4) h + N(0,0.2)), normalize data, run the selected regularizers, record \theta
-
-The choosing criteria is loss
-
-[[./figures/$x_0$_distribution.png]]
-
-[[./figures/$x_1$_distribution.png]]
-
-[[./figures/$x_2$_distribution.png]]
-
-[[file:figures/avg_reg.png]]
-
-hyper parameter used:
-+ enet(0.01, 0.2)
-+ eye(array([ 1.,  0.]), 0.01, 0.4)
-+ lasso(0.0001)
-+ OWL([2, 1], 0.01)
-+ penalty(array([ 1.,  0.]), 0.1, 1.0)
-+ ridge(0.001)
-+ weightedLasso(array([ 1.,  2.]), 0.01)
-+ weightedRidge(array([ 1.,  2.]), 0.01)
-
-The sparsity in penalty can be explained as I placed no constraint on known risk
-factor (l1 ratio is 1), so it only regularizes x_1 not x_0
-
-[[./figures/main_players_x0.png]]
-
-[[./figures/main_players_x1.png]]
-
-*** fifth run (nd data, sweep r, fix correlation of 0.04, fix theta to 1)
-b unregularized
-
-generate two datasets, one for training, one for validation
-
-normalize the data to 2 mean and 2 variance (validaton data is normalized
-using mean and variance for the training data)
-
-parameter search over the different hyperparams of the regularizers (each of the
-final candidate has loss around 0.083)
-
-for each regularizer, use the hyperparmeters that acheives the minimal loss
-
-repeat the following 10-20 times:
-
-generate data (detailed in nd data generation section), normalize data, run the selected regularizers, record \theta
-
-The choosing criteria is loss
-
-KL divergence metric filtering for relevant features:
-
-eye: 2.5722261048
-
-wlasso: 5.18104309657
-
-wridge: 6.8364694347
-
-lasso: 18.9613782735
-
-ridge: 12.7547711529
-
-owl: 13.5265637342
-
-enet: 17.7231341012
-
-KL divergence metric including irrelevant features:
-
-eye: 13.1307145901
-
-wlasso: 7.55507729218
-
-wridge: 11.5881850514
-
-lasso: 31.1710069808
-
-ridge: 16.9635832109
-
-owl: 17.5479982613
-
-enet: 30.2439873411
-
-[[./klmetric.numbers][kl/emd_metric_visual]] (generated using gen_result.py:gen_nd_loss_csv)
-
-
-* issues encountered
-the validation sweep tend to pick very small regularization which essentially
-unconstrained (maybe increase the noise could help?)
-
-* TODO sixth run (sweep corelation, fix r, fix theta to 1)
-
-* TODO seventh run (sweep fractional r, fix correlation, fix theta)
-
-* TODO eighth run (sweep theta, fix r, fix correlation)
-
-* next
-1. develop a more general metric (related to 4, earth mover distance)
-2. look for all unknown but different weights (balanced data) (ok via 4)
-3. extend risk to fractional (just sweep with fractional r) (ok)
-4. generate data in a more diverse manner: with correlation matrix (ok)
-
-|   1 | 0.5 |     |     |     |
-| 0.5 |   1 |     |     |     |
-|     |     |   1 | 0.1 | 0.2 |
-|     |     | 0.1 |   1 |   0 |
-|     |     | 0.2 |   0 |   1 |
-* plan
-
-think about last round of experiements:
-1. report p value of credibility (just look at 100 run and do a p test)
-2. report a good metric
-3. write a convincing story (3 days, maybe just the slides of what I think is important)
-
-read papers!
-
-* terminology
-1) shrinkage statistics: The term relates to the notion that the improved
-   estimate is made closer to the value supplied by the 'other information' than
-   the raw estimate.
-   + For example, the wildly popular Lasso/L1 regularization approach to 
-regression [28] is equivalent to maximum a posteriori (MAP) estimation under a
-Gaussian linear regression model having a double exponential (Laplace) prior on
-the coefficients.
+#+LATEX_HEADER: \usepackage{amsthm}
+#+LATEX_HEADER: \usepackage{amsmath}
+
+
+#+BEGIN_LaTeX
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+
+\newenvironment{definition}[1][Definition]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}]}{\end{trivlist}}
+\newenvironment{example}[1][Example]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}]}{\end{trivlist}}
+\newenvironment{remark}[1][Remark]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}]}{\end{trivlist}}
+\newenvironment{claim}[1][Claim]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}]}{\end{trivlist}}
+
+#+END_LaTeX
+
+* eye properties
+   
+  #+BEGIN_LaTeX
+  \begin{equation} \label{eye-defn}
+  eye(x) = \lambda \Big ( \Vert (1-r) \odot \theta \Vert_1 + \sqrt{ \Vert (1-r) \odot \theta \Vert_1^2
+  +  \Vert r \odot \theta \Vert_2^2} \Big )
+  \end{equation}
+  #+END_LaTeX
+  
+  We want
+
+  1) maintained model performance (perhaps show consistency?)
+
+  2) within a group of dependent features, weights of known risk factors should be
+     dense
+
+  3) within a group of dependent features of all unknown risk factors, the weights
+     should be sparse
+     
+  We have
+
+  1) eye is a norm
+  2) eye is \beta free
+  3) eye is a generalization of lasso, ridge, and elastic net
+
+* equivalence with original definition
+
+  recall the original eye definition is 
+
+     #+BEGIN_LaTeX
+     \begin{equation} \label{eye-defn-orig}
+     eye(x) = \lambda \inf\{t>0 \mid x \in \{t x \mid q(x) = \frac{\beta^2}{1-\beta}\}\}
+     \end{equation}
+
+     where $q(\theta) = 2 \beta  \Vert (1-r) \odot \theta \Vert_1 + 
+     (1-\beta)  \Vert r \odot \theta \Vert_2^2$
+     #+END_LaTeX     
+     
+     #+BEGIN_proof
+     
+     Since $\beta$ can be arbitrarily set, fix $\beta$=0.5, 
+     
+     then eqref:eye-defn-orig becomes
+     
+     \begin{equation}
+     eye(x) = \lambda \inf\{t>0 \mid x \in t \{ x \mid 
+     2  \Vert (1-r) \odot x \Vert_1 +  \Vert r \odot x \Vert_2^2 = 1\}\}
+     \end{equation}
+     
+     Assume $x \neq 0$ and denote $eye(x) := \lambda t$, then $x \in t \{ x \mid 
+     2  \Vert (1-r) \odot x \Vert_1 +  \Vert r \odot x \Vert_2^2 = 1\}$, that is 
+     $\frac{2 \Vert (1-r) \odot x \Vert_1}{t} + \frac{ \Vert r \odot x \Vert_2^2}{t^2} = 1$
+     
+     As this is a quadratic equation in t and from assumption we known t>0 (eye
+     being a norm and $x \neq 0$), solving for t yields:
+     
+     #+BEGIN_LaTeX
+     \begin{equation} \label{tmp-derivation}
+     t = \Vert (1-r) \odot x \Vert_1 + 
+     \sqrt{ \Vert (1-r) \odot x \Vert_1^2 +  \Vert r \odot x \Vert_2^2}
+     \end{equation}
+     #+END_LaTeX
+     
+     Note that in the event $x=0$, t=0, agreeing with the fact that $eye(0)=0$.
+     Thus eqref:eye-defn and eqref:eye-defn-orig are equivalent.
+     
+     #+END_proof
+
+* orthogonal regression case
+   We consider a special case of regression and orthogonal design matrix (X^T X
+   = I) with eye regularization. This restriction allows us to obtain a closed
+   form solution so that key features of eye penalty can be highlighted.
+   
+   With eqref:eye-defn, we have
+  
+   #+BEGIN_LaTeX
+   \begin{equation} \label{regression-obj}
+   \min_{\theta} \frac{1}{2} \Vert y - X \theta \Vert_2^2 + n \lambda 
+   \Big ( \Vert (1-r) \odot \theta \Vert_1 + 
+   \sqrt{\Vert (1-r) \odot \theta \Vert_1^2 + 
+    \Vert r \odot \theta \Vert_2^2} \Big )
+   \end{equation}
+   
+   Since the objective is convex, we solve for its subgradient g.
+   
+   \begin{equation}  \label{orthog-general}
+   g = X^T X \theta - X^T y + n \lambda (1-r) \odot s + 
+   \frac{n\lambda}{Z} (\Vert (1-r) \odot \theta \Vert_1 (1-r) \odot s +  r \odot r \odot \theta)
+   \end{equation}
+   
+   where $s_i = sgn(\theta_i)$ if $\theta_i \neq 0$, 
+   $s_i \in [-1,1]$ if $x_i =0$, and
+   $Z = \sqrt{\Vert (1-r) \odot \theta \Vert_1^2 + 
+    \Vert r \odot \theta \Vert_2^2}$.
+   
+   By our assumption $X^T X = I$, and the fact that 
+   $\hat \theta^{OLS} = (X^T X)^{-1} X^T y = X y$
+   (the solution for oridinary least square), we simplify \ref{orthog-general}
+   as 
+
+   \begin{equation}
+   g = \theta - \hat \theta^{OLS} + n \lambda (1-r) \odot s + 
+   \frac{n \lambda}{Z} (\Vert (1-r) \odot \theta \Vert_1 (1-r) \odot s + r \odot r \odot \theta)
+   \end{equation}
+   
+   setting g to 0 we have
+   
+   \[
+   \hat \theta_i = 
+   \begin{cases}
+   \frac{\hat \theta_i^{OLS}}{1+\frac{n \lambda}{Z} r_i^2} - 
+   \frac{n \lambda (1-r_i)(1+\frac{\Vert (1-r) \odot \hat \theta \Vert_1}{Z})}{1+\frac{n\lambda}{Z} r_i^2},
+   & \text{if } \hat \theta_i^{OLS} > n \lambda (1-r_i)(1+\frac{\Vert (1-r) \odot \hat \theta \Vert_1}{Z})\\
+   0,& \text{if } |\hat \theta_i^{OLS}| < n \lambda (1-r_i)(1+\frac{\Vert (1-r) \odot \hat \theta \Vert_1}{Z})\\
+   \frac{\hat \theta_i^{OLS}}{1+\frac{n \lambda}{Z} r_i^2} +
+   \frac{n \lambda (1-r_i)(1+\frac{\Vert (1-r) \odot \hat \theta \Vert_1}{Z})}{1+\frac{n\lambda}{Z} r_i^2}
+   ,& \text{otherwise}
+   \end{cases}
+   \]
+   
+   in more compact notation
+   \begin{equation} \label{orthog-theta}
+   \hat \theta_i = \frac{\hat \theta_i^{OLS}}{1+\frac{n \lambda}{Z} r_i^2}
+   \max \Big ( 0, 
+   1-\frac{n \lambda (1-r_i)(1+\frac{\Vert (1-r) \odot \hat \theta \Vert_1}{Z})}{|\hat \theta_i^{OLS}|} \Big )
+   \end{equation}
+
+   where $Z = \sqrt{\Vert (1-r) \odot \hat \theta \Vert_1^2 + 
+    \Vert r \odot \hat \theta \Vert_2^2}$.
+
+   note that \ref{orthog-theta} is still an implicit equation in $\theta$
+   because $Z$ is a function of $\hat \theta$. Also we implicitly assumed that $Z \neq 0$.
+   #+END_LaTeX
+   
+   It may worry you if $Z=0$: wouldn't the denominator be 0? This only happens
+   if $\theta=0$. However, by the complimentary slackness condition in KKT, we
+   know $\lambda>0$ implies solution is on the boundary of the constraint
+   formulation of the problem (for $\lambda=0$, we are back to ordinary least
+   square, there's no point in discussing that). So long as the optimal solution
+   for the unconstrained problem is not at *0*, we won't get into trouble unless
+   the constraint is $eye(\theta) \leq 0$, which won't happen in the regression
+   setting as $\lambda$ is finite. If the optimal solution for the unconstrained
+   problem is *0*, we are again back to ordinary least square solutions. So the
+   upshot is we can assume $Z \neq 0$ otherwise it will automatically fall back
+   to ordinary least square.
+   
+   [[./soft_threshold.png]]
+  
+** TODO The slope between $\hat \theta_i$ and $\hat \theta_i^{OLS}$ is non-negative
+   
+   For $r_i=0$ or $r_i=1$, the function is monotone non-decreasing.
+
+   For fractional r, evidence abound (actually not right, need further check as
+   $\theta_i$ depends on $\theta_j$ for all $j$)
+   [[./symdiff.ipynb]]
+   
+   The proof will be messy (don't know if worth it)
+
+   + The messy proof for $\hat \theta_i^{OLS} \geq 0$
+     
+     TO FILL IN
+   
+   The other part of the proof follows by observing that relation between $\hat
+   \theta_i$ and $\hat \theta_i^{OLS}$ is symmetric about the origin.
+   
+* TODO perfectly correlated case
+  
+  Denote the objective function in \ref{regression-obj} as $L(\theta)$. 
+  Assume $\hat \theta$ is the optimal solution, $x_i = x_j$
+  (e.g. the $i^{th}$ and $j^{th}$ columns of design matrix is co-linear)
+
+  + r_i = 1, r_j = 0, x_i = x_j => $\hat \theta_j = 0$
+    
+    Here we show eye penalty prefers known risk factors over unknown risk factors.
+
+    #+BEGIN_LaTeX
+    \begin{proof}
+    Assume $r_i=1$, $r_j=0$.
+    
+    consider $\theta'$ that only differs from $\hat \theta$ at the $i^{th}$ and $j^{th}$
+    entry such that $\theta'_i = \hat \theta_i + \hat \theta_j$ and $\theta'_j=0$.
+    
+    $L(\hat \theta) - L(\theta') = \frac{1}{2} \Vert y-X \hat \theta\Vert_2^2 +
+    n\lambda \Big ( | \hat \theta_j | + \sqrt{(C+
+    | \hat \theta_j |)^2 + D + \hat \theta_i^2} \Big) 
+    - \frac{1}{2} \Vert y-X \theta' \Vert_2^2 - n\lambda \Big( | \theta_j' | + \sqrt{(C+
+    | \theta_j' |)^2 + D + \theta_i'^2} \Big )$
+    
+    where C and D are nonnegative constant involving entries other than $i$ and $j$. 
+    Note that the sum of squared residue is the same for both 
+    $\theta'$ and $\hat \theta$ owing to the fact that
+    $x_i=x_j$. Along with definition of $\theta'$, we have
+    
+    \begin{align*} 
+    L(\hat \theta) - L(\theta') &= n\lambda \Big ( | \hat \theta_j | + \sqrt{(C+
+    | \hat \theta_j |)^2 + D + \hat \theta_i^2} 
+    - \sqrt{C^2 + D + (\hat \theta_i + \hat \theta_j)^2} \Big )
+    \end{align*}
+    
+    \begin{claim} \label{claim1}
+    $L(\hat \theta) - L(\theta') \geq 0$ with equality only if $\hat \theta_j=0$
+    \end{claim}
+    
+    \begin{proof}
+    Since $n\lambda$ is positive, the claim is equivalent to
+    $$ \sqrt{(C+ | \hat \theta_j |)^2 + D + \hat \theta_i^2} 
+    \geq \sqrt{C^2 + D + (\hat \theta_i + \hat \theta_j)^2} - | \hat \theta_j |$$
+    
+    If right hand side is negative, we are done as left hand side is nonnegative.
+    
+    Othewise, both sides are nonnegative, we square them and rearrange to get the 
+    equivalent form
+    
+    $$\hat \theta_j^2 + 2 \hat \theta_i \hat \theta_j \leq 2 |\hat \theta_j| \sqrt{C^2+D+(\hat \theta_i + \hat \theta_j)^2} + 2 C |\hat \theta_j|$$
+    
+    which is true following
+  
+    \begin{align}
+    \hat \theta_j^2 + 2 \hat \theta_i \hat \theta_j &\leq 2\hat \theta_j^2 + 2 \hat \theta_i \hat \theta_j - \hat \theta_j^2 \label{sq-drop1}\\
+    &\leq 2|\hat \theta_j||\hat \theta_i+\hat \theta_j| \label{sq-drop2} \\
+    &= 2|\hat \theta_j|\sqrt{(\hat \theta_i+\hat \theta_j)^2}\\
+    &\leq 2 |\hat \theta_j| \sqrt{C^2+D+(\hat \theta_i + \hat \theta_j)^2} + 2 C |\hat \theta_j|
+    \end{align}
+    
+    Again if $\hat \theta_j \neq 0$, the inequality is strict from \eqref{sq-drop1} to \eqref{sq-drop2}
+  
+    \end{proof}
+  
+    Since we assumed that $\hat \theta$ is optimal, the equality in \ref{claim1} must hold, thus $\hat \theta_j=0$.
+  
+    \end{proof}
+    #+END_LaTeX
+  + r_i = 1, r_j = 1, x_i = x_j => $\hat \theta_i = \hat \theta_j$
+
+    Feature weights are dense in known risk factors
+
+    #+BEGIN_LaTeX
+    \begin{proof}
+    Assume $\hat \theta$ is optimal, consider $\theta'$ that is the same
+    as $\hat \theta$ except $\theta'_i = \theta'_j= \frac{\hat \theta_j + \hat \theta_j}{2}$.
+
+    Assume $\hat \theta \neq \theta'$: $\hat \theta_i \neq \hat \theta_j$. 
+    Again the sum of residue of for both estimation is unchanged as $x_i=x_j$
+    
+    \begin{align*}
+    L(\hat \theta) - L(\hat \theta) &= n\lambda \Big ( \sqrt{(C+|\hat \theta_i|+|\hat \theta_j|)^2
+    +D+\hat \theta_i^2 + \hat \theta_j^2} - 
+    \sqrt{(C+2\frac{|\hat \theta_i + \hat \theta_j|}{2})^2 + D+ 2 \frac{|\hat \theta_i + \hat \theta_j|^2}{4}} \Big)\\
+    &\geq n\lambda \Big ( \sqrt{(C+|\hat \theta_i|+|\hat \theta_j|)^2
+    +D+\hat \theta_i^2 + \hat \theta_j^2} - 
+    \sqrt{(C+|\hat \theta_i| + |\hat \theta_j|)^2 + D+ \frac{|\hat \theta_i + \hat \theta_j|^2}{2}} \Big)\\
+    \end{align*}
+
+    Since $$\hat \theta_i^2 + \theta_j^2 - \frac{|\hat \theta_i + \hat \theta_j|^2}{2} = \frac{(\hat \theta_i - \hat \theta_j)^2}{2}>0$$
+    by assumption that $\hat \theta_i \neq \hat \theta_j$ for the optimal solution. This shows $L(\hat \theta) - L(\hat \theta)>0$,
+    which contradict our assumption.
+    
+    Thus $\hat \theta_i=\hat \theta_j$ for the optimal solution.
+    \end{proof}
+    #+END_LaTeX
+  + r_i = 0, r_j = 0, x_i = x_j => back to lasso continuum 
+    
+    Note that fixing $\theta_k$ $\forall k \not \in \{i,j\}$, solving for
+    $\theta_i$ and $\theta_j$ reduces the problem for 2 dimensional lasso 
+    regression, thus all properties of lasso carry over for $\theta_i$ and
+    $\theta_j$. Thus sparsity is maintained in unknown features.
+  + r_i > r_j and $sgn(\hat \theta_i) > 0$ => $\hat \theta_i > \hat \theta_j \geq 0$
+    
+    TODO: fill in the already proved proof
+    2 parts, one to say that $sgn(\theta_i)=sgn(\theta_j)$, the other
+    show the main claim
+  + r_i > r_j and $sgn(\hat \theta_i) < 0$ => $\hat \theta_i < \hat \theta_j
+    \leq 0$
+    
+    Follow the same proof as the above except flip sign at the last step
+
+** TODO general case with diferent r_i and r_j
+* general correlation
+
+  grouping effect in elastic net is still present in eye penalty within
+  groups with similar level of risk.
+
+  #+BEGIN_LaTeX
+  \begin{theorem}
+  if $\hat \theta_i \hat \theta_j > 0$ and design matrix is standardized, then
+  \begin{equation*}
+  \frac{|r_i^2 \hat \theta_i - r_j^2 \hat \theta_j|}{Z} \leq \frac{\sqrt{2 (1-\rho)} \Vert y \Vert_2}{n\lambda}
+  + |r_i-r_j| (1+\frac{\Vert (1-r) \odot \hat \theta \Vert_1}{Z})
+  \end{equation*}
+
+  where $Z = \sqrt{\Vert (1-r) \odot \hat \theta \Vert_1^2 + \Vert r \odot \hat \theta \Vert_2^2}$,
+  $\rho$ is the sample covariance between $x_i$ and $x_j$
+  \end{theorem}
+
+  \begin{proof}
+  Denote the objective in \ref{regression-obj} as $L$. Assume $\hat \theta_i \hat \theta_j > 0$, 
+  $\hat \theta$ is the optimal weights, and the design matrix $X$ is standardized to have zero mean and unit
+  variance in its column. Via the optimal condition and \ref{orthog-general}, $g(\hat \theta)=0$. 
+  Hence we have
+  
+  \begin{align}
+  -x_i^T(y-X\hat \theta) + n\lambda((1-r_i) s_i + \frac{\Vert (1-r) \odot \hat \theta \Vert_1}{Z}
+  ((1-r_i) s_i + r_i^2 \hat \theta_i)) \label{corr-eq1}
+  \\
+  -x_j^T(y-X\hat \theta) + n\lambda((1-r_j) s_j + \frac{\Vert (1-r) \odot \hat \theta \Vert_1}{Z}
+  ((1-r_j) s_j + r_j^2 \hat \theta_j)) \label{corr-eq2}
+  \end{align}
+
+  Substract \ref{corr-eq2} from \ref{corr-eq1}. The assumption that $\hat \theta_i \hat \theta_j > 0$ 
+  implies $sgn(\hat \theta_i)=sgn(\hat \theta_j)$ and eliminates the need to discuss subgradient issue.
+  
+  $$(x_j^T-x_i^T)(y-X\hat \theta) + n\lambda((r_j-r_i)sgn(\hat \theta_i) + \frac{\Vert (1-r) \odot \hat \theta \Vert_1}{Z}
+  ((r_j-r_i) sgn(\hat \theta_i) + r_i^2 \hat \theta_i - r_j^2 \hat \theta_j)) = 0$$
+
+  Rearange to get
+
+  \begin{equation} \label{corr-eq3}
+  \frac{r_i^2 \hat \theta_i - r_j^2 \hat \theta_j}{Z} = \frac{(x_i^T - x_j^T)(y-X\hat \theta)}{n \lambda}
+  + (r_i-r_j)sgn(\hat \theta_i) \Big( 1+\frac{\Vert (1-r) \odot \hat \theta \Vert_1}{Z} \Big )
+  \end{equation}
+  
+  Being the optimal weights, $L(\hat \theta) \leq L(\textbf{0})$, which implies
+  $\Vert y-X\hat \theta \Vert_2^2 \leq \Vert y \Vert_2^2$
+
+  Also, standardized design matrix gives $\Vert X_i-X_j\Vert_2^2=<x_i, x_i> + <x_j, x_j> - 2<x_i, x_j>=2(1-\rho)$
+  
+  Taking the absolute value of \ref{corr-eq3} and applying cauchy schwarz inequality, we get
+  \begin{align}
+  \frac{|r_i^2 \hat \theta_i - r_j^2 \hat \theta_j|}{Z} &\leq \frac{\Vert x_i - x_j \Vert_2 \Vert y-X\hat \theta \Vert_2}{n \lambda}
+  + |r_i - r_j| (1+\frac{\Vert (1-r) \odot \hat \theta \Vert_1}{Z})\\
+  &\leq \frac{\sqrt{2(1-\rho)}\Vert y \Vert_2}{n \lambda}
+  + |r_i - r_j| (1+\frac{\Vert (1-r) \odot \hat \theta \Vert_1}{Z})
+  \end{align}
+  
+  \end{proof}
+
+  \begin{corollary}
+  if $\hat \theta_i \hat \theta_j > 0$, design matrix is standardized, and $r_i=r_j \neq 0$
+  $$\frac{|\hat \theta_i - \hat \theta_j|}{Z} \leq \frac{\sqrt{2(1-\rho) \Vert y \Vert_2}}{r_i^2 n \lambda}$$
+
+  where $Z = \sqrt{\Vert (1-r) \odot \hat \theta \Vert_1^2 + \Vert r \odot \hat \theta \Vert_2^2}$,
+  $\rho$ is the sample covariance between $x_i$ and $x_j$
+  \end{corollary}
+   
+  This verifies the existence of grouping effect: highly correlated weights with similiar risk 
+  are grouped together in weight space.
+  #+END_LaTeX
+
+* analysis on run 6 and 7
+
+  run 6 results: (sweep correlation)
+
+  [[./figures/sample_figure_corr.png]]
+
+  [[./run6.numbers]]
+  
+  run 7 results: (sweep fractoinal r)
+
+  [[./run7.numbers]]
+  
+  [[./run7_analysis.ipynb]]
+* TODO [#B] literature review on interpretation
+* TODO [#B] different theta experiment: make a regression problem
+* TODO [#B] consistent estimator: rate of convergence
+* TODO [#B] general linearly independent case
+* TODO next
+1. proof general r
+2. run 3 shapes with lots of features per group

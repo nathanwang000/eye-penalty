@@ -1,5 +1,5 @@
 #+TITLE: Building Trustworty Models (Draft)
-#+DATE: <2017-02-28 Tuesday>
+#+DATE: <2017-03-07 Tuesday>
 #+AUTHOR: Jiaxuan Wang
 #+EMAIL: jiaxuan@umich
 #+OPTIONS: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline author:t c:nil
@@ -12,11 +12,10 @@
 #+KEYWORDS:
 #+LANGUAGE: en
 #+SELECT_TAGS: export
-#+LATEX_HEADER: \usepackage{bbm} 
 #+LATEX_HEADER: \usepackage{amsthm}
 
 The motivation is modified based on the motivation section from Lauren Naylor's
-original writeup. 
+original write-up. 
 
 * motivation
 
@@ -30,7 +29,7 @@ cite:lipton2016mythos. In healthcare, we define an interpretable model as one
 that is able to provide reasons for its predictions. Past research has shown
 that decision trees are preferred among physicians because of their high level
 of interpretability cite:meyfroidt2009machine,kononenko2001machine. However,
-this alone is not enough to completely gain their trust.
+interpretability alone is not enough to completely gain physician's trust.
 
 A model may provide reasons for its predictions, but if the reasons do not agree
 with what is known to be medically relevant, physicians will not trust it. For
@@ -43,30 +42,44 @@ that is known to be relevant is correlated with a feature that is not, the model
 may use the latter feature to make predictions and discard the former.
 
 This example suggests that in addition to interpretability, we also want the
-model to be credible, that is to agree with prior knowledge in the field without
-lowering performance. Note that maintaining performance is important because
-that's what makes the model useful.
+model to be credible, that is to agree with prior knowledge in the
+field. Ideally, this increase in trust should not lower performance. 
 
-It may sound too good to be true that there's no tradoff between performance and
-credibility: isn't everything come with a cost? Given we already have an accurate
-model, what credibility does is to filter the reality through a particular point
-of view and the cost we pay is just providing this viewing lens, which in the
-medical context is the known risk factors. To illustrate this point, consider an
-absurd example of trying to predict the number of people drown in a month using
-season and number of icecreams sold within that month as features. Anyone
-reasonable would agree that more people drown in summer than in any other season
-because more people swim in summer. The season should be an obvious relevant
-feature for a learning algorithm. However, it is very possible that a machine
-learner would choose number of icecreams sold as a predictive variable over
-season because more icecream sold implies summer and thus positively affect the
-number of people drown (the two features are correlated). The learned model is
-obviously as accurate as the one only using season, but the fact that the
-model is not aware of the thinking mode of human makes its reasoning cryptic,
-which can be easily fixed by providing the model with proper knowledge. Thus, this
-seemingly free lunch property is obtained by leveraging domain knowledge. 
+Apart from gaining trust, credible models promote actions. In the medical
+context, we often not only desire to predict the risk of a patient getting an
+infection, but also want to enact actionable plans to lower the
+risk. Admittedly, all models theoretically provide actions that will lower the
+risk by perturbing features to observe the effect on the predicted outcome.
+Then physicians can choose to focus on features that lower the risk the most.
+However, in a non-credible model, because of its lack of domain knowledge, it's
+very plausible to suggest an unorthodox action that is often costly compared to
+an already implemented procedure that solves the same issue (they solve the same
+issue because the known risk factor is correlated with the unknown feature).
+Alternatively, many features are simply not actionable, meaning that even though
+we know a feature is important, we cannot change it. For example, age is
+positively correlated to many disease, but we cannot change this feature. If we
+use a credible model and interpret risk factors as actionable factors denoting
+whether a feature can be changed, the suggested actions will make more sense.
 
-It should be noted that credibility implies interpretability, but the inverse is
-not true. 
+It may sound too good to be true that there's no trade-off between performance
+and credibility: doesn't everything come at a cost? Given that we already have
+an accurate model, credibility filters features through domain expertise. The
+cost we pay is this outside knowledge, which in the medical context are known
+risk factors. To illustrate this point, consider an absurd example of trying to
+predict the number of people drowning in a month using season and number of
+ice-creams sold within that month as features. Anyone reasonable would agree
+that more people drowning in summer than in any other season because more people
+swim in summer. The season should be an obvious relevant feature for a learning
+algorithm. However, it is very likely that a model would choose the number of
+ice-creams sold as a predictive variable over season because more ice-creams
+sold implies summer and thus positively affects the number of people
+drowning. At the heart of this issue is that highly correlated features are
+indistinguishable to a model in their predictive power. In the extreme case of
+co-linear features, their optimal weights for minimizing prediction error can
+vary over a continuum as long as the sum of weights is fixed. There's
+no way for the model to know which one to pick in correlated features
+without outside guidance and that's what makes its reasoning cryptic. We can fix
+this issue by providing the model with domain knowledge.
 
 The goal of this research is to create credible models in the sense that matches
 a clinician's medical knowledge. We aim to develop methods for combining the
@@ -77,22 +90,33 @@ acquiring an infection with C. difficile.
 * objective
 
 We want to incorporate known risk factors into models such that they favor known
-risk factors over unknown features when these features are correlated.
+risk factors over unknown features when these features are correlated. We want
+the model to be end to end trainable so that users don't have to choose a hard
+threshold to cutoff correlation as is often the case in preprocessing.
 
-* related work
+* TODO related work
 
-Credibility and interpretability are usually approached through feature
-selection, which can be further breakdown into subset selection, shrinkage, and
-dimension reduction cite:zou2006adaptive. Subset selection selects subset of
-features so that when the model is trained on this subset, the tradeoff between
-model simplicity and increase in loss is balanced. This class of methods include
-best subset selection and its computationally efficient variant stepwise
-selection. Shrinkage methods refer to regularization, which is penalty added on
-the size of model parameters. This is the most oftenly used class of methods due
-to its non-intrusiveness regarding training pipeline. Dimension reduction
-methods try to learn the true dimension of the data so that noise is minimized
-and correlation is removed. Example methods include PCA and ICA. In this work,
-we focus on regularization methods.
+While interpretability has been actively explored in the literature
+cite:lipton2016mythos, credibility has never been formally studied. It is often
+assumed that an interpretable model implies trust, which is not true as we saw
+in the motivation. In fact, credibility is a super-set of
+interpretability. Credibility implies interpretability, but not the other way
+around.
+
+Interpretability is usually approached through dimensionality reduction. We
+preprocess the data to eliminate correlation or encode the feature selection
+criterion into the model's objective function or both. Dimensionality reduction
+methods can be classified by whether they are continuous or discrete. Discrete
+methods include subset selection (examples includes best subset selection and
+its computationally efficient variant, stepwise selection), which explicitly
+selects subset of features so that the trade-off between model simplicity and
+loss is balanced, PCA, which minimizes noise in choosing orthogonal components,
+and ICA, which picks out independent components by assuming that they are not
+normally distributed. Continuous shrinkage methods refer to regularization,
+which is penalty added on the norm of model parameters. Regularization is the
+most oftenly used class of methods due to its non-intrusiveness on the training
+pipeline. In this work, we focus on regularization methods because of their
+better integration into the model so that no hard threshold are picked manually.
 
 The most commonly used and analyzed regularizations are $L_1$ (lasso) and $L_2$
 (ridge) norm due to their desirable statistical properties. Each of which can be
@@ -105,24 +129,25 @@ elastic net cite:zou2005regularization, and weighted lasso. While OWL, elastic
 net, and weighted lasso are generalizations of lasso, adaptive lasso satisfies
 the oracle property in the sense that under mild regularity conditions, it
 identifies the right subset model and is consistent with true parameters (that is
-converge in distribution to the true underlying feature weights). However,
+the learned features converge in distribution to the true underlying feature weights). However,
 adaptive lasso requires learning another model to set its weight, making it
-more cubersome to use than others.
+more cumbersome to use than others.
 
-The most natural extension over the regular lasso penalty is the weighted lasso,
-which introduces a weight $w_i$ for each feature: $\lambda \sum_{i=1}^n
-w_i |\theta_i|$. This penalty is used in [[{need%20to%20cite%209}][cite:liu2016transferring]] where the feature's
-weight is the inverse of its relevance. This approach causes the weights of less
-relevant features correlated with more relevant features to be driven to
-zero. However, we may not know the relevance of the features that have not been
-identied as risk factors: there may be undiscovered relationships not mentioned
-in the literature. If such a feature were correlated with a known risk factor,
-we would want to throw it out and use the known risk factor, but if it is not
-correlated with another feature and is predictive, we would like to keep
-it. Combining expert knowledge with a model is explored in cite:sun2012combining. The
-model is trained using features identied as relevant, along with the subset of
-other features from the data that give the most improvement to performance,
-while creating the least redundancy in the features. This work differs from ours
+The most natural extension over the regular lasso is the weighted lasso, which
+introduces a weight $w_i$ for each feature: $\lambda \sum_{i=1}^n
+w_i |\theta_i|$. This penalty is used in [[{need%20to%20cite%209}][cite:liu2016transferring]] where the
+feature's weight is the inverse of its relevance (*TODO: Haven't read this paper
+yet, will do*). This approach causes the weights of less relevant features
+correlated with more relevant features to be driven to zero. However, we may not
+know the relevance of the features that have not been identified as risk
+factors: there may be undiscovered relationships not mentioned in the
+literature. If such a feature were correlated with a known risk factor, we would
+want to throw it out and use the known risk factor, but if it is not correlated
+with another feature and is predictive, we would like to keep it. Combining
+expert knowledge with a model is explored in cite:sun2012combining. The model is
+trained using features identified as relevant, along with the subset of other
+features from the data that give the most improvement to performance, while
+creating the least redundancy in the features. This work differs from ours
 because their list of relevant features is assumed to be known, and their
 motivation is to increase model performance, not credibility.
 
@@ -131,34 +156,32 @@ motivation is to increase model performance, not credibility.
 Fixing the level of performance, the task of learning is to allocate weights to
 features so that desirable structures are kept. We want our model to be
 consistent with physician's knowledge. More concretely, we want the model to
-place high weights on relevant and known features while keeping the unknown
-relevant features sparse. This whole process should be done in a data driven way
-so that the known risk factors are merely suggestions for the model to consider
-instead of forced constraints. We call a model credible if it satisfies the
-following properties:
+prefer more sparsity in the unknown set of features compared to the known set.
+This whole process should be data driven so that the known risk factors are
+merely suggestions for the model instead of forced constraints. We call a model
+credible if it satisfies the following properties:
 
-1) the performance is comparable with the best model 
-2) irrelevant features whether known or unknown should have low weights
-3) within a group of dependent features, weights of known risk factors should be
+1) within a group of dependent features, weights of known risk factors should be
    dense
-4) within a group of dependent features of all unknown risk factors, the weights
+2) within a group of dependent features of all unknown risk factors, the weights
    should be sparse
+3) maintained model performance
 
-Criteria 1) is acheived by grid searching over the validation set so that
-models in consideration have similar level of performance. 2) is acheive by
-constraining on the size of parameters which all regularizations do.
+Criteria 3) is acheived by grid searching over the validation set so that models
+in consideration have similar level of performance.
 
-For 3) and 4) we measure the distance in distribution between each group of
+For 1) and 2), we measure the distance in distribution between each group of
 correlated features and the known risk factor indicator vector within that
-group. The metrics used are KL divergence and earth mover's distance. Earth
-mover's distance measures the amount of work to turn one distribution to the
-other and is symmetric, while KL divergence is asymmetric in its arguments.
+group. The metrics used is symmetric KL divergence, which is $\frac{KL(p \Vert q) +
+KL(q \Vert p)}{2}$ where $p$ and $q$ are distributions we are considering.
 
-Here I give an exmaple of what I mean by measuring KL divergence in a
-group of dependent features.
+Here's an example of calculating KL divergence in a group of dependent
+features. It's trivial to extend this example for symmetric KL.
 
-Assume $r=[1,1,0,0]^T$ and $\theta=[0.1, 0.2, -0.01, 0.02]^T$ (\theta
-excluding b term), we first normalize each vector so that their $||\cdot||_1$
+#+BEGIN_LaTeX
+
+Assume $r=[1,1,0,0]^T$ and $\theta=[0.1, 0.2, -0.01, 0.02]^T$ ($\theta$
+excluding b term), we first normalize each vector so that their $ \Vert \cdot \Vert_1$
 is 1.
 
 $r'=[0.5, 0.5, 0, 0]^T$, $\theta' = [ 0.32258065,  0.64516129,  0.03225806,
@@ -171,12 +194,14 @@ $r''=[  4.99999000e-01,   4.99999000e-01,   9.99996000e-07,
          9.99996000e-07]^T$, $\theta'' = [ 0.32258065,  0.64516129,  0.03225806,
 0.06451613]^T$
 
-Then $KL(r''||\theta'')$ is the reported result in each dependent group,
-where $KL(x||y) = \sum_{i} p(x_i) \log \frac{p(x_i)}{p(y_i)}$
+Then $KL(r'' \Vert \theta'')$ is the reported result in each dependent group,
+where $KL(x \Vert y) = \sum_{i} p(x_i) \log \frac{p(x_i)}{p(y_i)}$
 
 In the case where r is all 0 in relevant feature group, I give
-$min_{v \in \textit{one hot vectors}} KL(v||\theta'')$ as a loss as to encourage
+$\min_{v \in \textit{one hot vectors}} KL(v \Vert \theta'')$ as a loss as to encourage
 sparse feature.
+
+#+END_LaTeX
 
 * method
 
@@ -185,9 +210,12 @@ maintaining dense weights in known risk factors is to constrain known risk
 factors using l_2 norm and unknown risk factors using l_1 norm. Formally, this
 penalty term can be written as
 
-pena(\theta) = \alpha (0.5 (1-\beta) ||r $\odot$ \theta||_2^2 + \beta ||(1-r) $\odot$ \theta||_1)
+#+BEGIN_LaTeX
+$pena(\theta) = \lambda (0.5 (1-\beta)  
+\Vert r \odot \theta \Vert_2^2 + \beta  \Vert (1-r) \odot \theta \Vert_1)$
+#+END_LaTeX
 
-where r \in {0,1}^d, \theta \in $\mathbb{R}^d$, \alpha \in $\mathbb{R}_{+}$, \beta
+where r \in {0,1}^d, \theta \in $\mathbb{R}^d$, $\lambda$ $\in$ $\mathbb{R}_{+}$, \beta
 \in [0,1]
 
 Assuming x is the known risk factor and y is the unknown risk factor, we plot
@@ -197,7 +225,7 @@ the contour of this penalty:
 
 As the contour plot suggests, this penalty function is nonhomogeneous:
 that is $f(tx) \neq |t|f(x)$. In the case of perfectly correlated variables,
-this translate to model's sensitivity to $\alpha$: small $\alpha$ will let the model
+this translate to model's sensitivity to $\lambda$: small $\lambda$ will let the model
 favor unknown risk factor y which is opposite to what we want.
 
 To address this issue, we propose eye penalty which is obtained by fixing a
@@ -217,18 +245,19 @@ last section ref:eye_properties, I state the result:
 
 ** formal definition of eye penalty
    
-$q(x) = 2 \beta ||(1-r) \odot x||_1 + 
-(1-\beta) ||r \odot x||_2^2$
-
-$eye(x) = \alpha \inf\{t>0|x \in t\{ x | q(x) = \frac{\beta^2}{1-\beta}\}\}$
+   #+BEGIN_LaTeX
+   \begin{equation} \label{eye-defn}
+   eye(x) = \lambda  
+   \Big ( \Vert (1-r) \odot \theta \Vert_1 + \sqrt{ \Vert (1-r) \odot \theta \Vert_1^2
+   +  \Vert r \odot \theta \Vert_2^2} \Big )
+   \end{equation}
+   #+END_LaTeX
 
 ** properties
 1) eye is a norm
-2) \beta controls only the scaling factor of the norm \\
-   This implies that \beta need not to be grid searched because \alpha also
-   controls scaling factor
+2) eye is \beta free
 3) eye is a generalization of lasso, ridge, and elastic net
-
+   
 * TODO experiments
   
   Each experiment was ran with a different aim in mind. The first four
@@ -521,7 +550,7 @@ owl: 17.5479982613
 
 enet: 30.2439873411
 
-[[./klmetric.numbers][kl/emd_metric_visual]] (generated using gen_result.py:gen_nd_loss_csv, is in
+[[./run5.numbers][kl_metric_visual]] (generated using gen_result.py:gen_nd_loss_csv, is in
 .pages format so assumes mac, included in attachment)
 
 *** data gen (genPartitionData)
@@ -538,7 +567,7 @@ $h_i \sim Uniform(-3, 1, n)$
 
 \theta_i = 1 \forall i
 
-$x_{i,j} \sim$Uniform(1..2) h_i + N(0, 0.2)$ for i \in [n] for j \in [npergrop]
+$x_{i,j} \sim Uniform(1..2) h_i + N(0, 0.2)$ for i \in [n] for j \in [npergrop]
 
 $y = \frac{\sum_{i=1}^{nrgroups} h_i \theta_i}{\sum_{i=1}^{nrgroups} |\theta_i|} > -1$
 
@@ -554,7 +583,7 @@ Number of Epoch: 1000
 Regulizers: elastic net, lasso, ridge, OWL, weighted lasso, weighted ridge, 
 eye penalty
 
-** TODO 6_th run (sweep corelation, fix r, fix theta to 1)
+** TODO 6_th run (sweep corelation, fix r, fix theta to 1) (to be fused with weekly report)
     b unregularized
 
     generate two datasets, one for training, one for validation
@@ -621,12 +650,17 @@ Number of Epoch: 1000
 Regulizers: elastic net, lasso, ridge, OWL, weighted lasso, weighted ridge, 
 eye penalty
 
-** TODO 7_th run (sweep fractional r, fix correlation, fix theta)
+** TODO 7_th run (sweep fractional r, fix correlation, fix theta) (to be fused with weekly report)
     To extend r to be fractional, we consider setting r according to
     parametrized functions: log, exp, sigmoid, and linear.
     
     [[./figures/r_weights.png]]
 
+*** data generation
+    
+    fix correlation of 0.99, generate groups of 10 data via a block diagonal
+    covariance matrix. The rest is the same as run 6
+    
 ** TODO 8_th run (sweep theta, fix r, fix correlation)
     Try different theta in data generation. I expect this will not make a difference in
     dependent groups compared to run 5, 6, and 7.
@@ -641,54 +675,62 @@ eye penalty
 
 * summary of regularizations used in this work
 *** eye penalty label:eye_properties
+    
+    #+BEGIN_LaTeX
+    $q(\theta) = 2 \beta  \Vert (1-r) \odot \theta \Vert_1 + 
+    (1-\beta)  \Vert r \odot \theta \Vert_2^2$
 
-    q(\theta) := 2 \beta ||(1-r) $\odot$ \theta||_1 + 
-    (1-\beta) ||r $\odot$ \theta||_2^2
+    $pena(\theta) = \lambda q(\theta)$
 
-    pena(\theta) := \alpha q(\theta)
 
-    where r \in {0,1}^d, \theta \in $\mathbb{R}^d$, \alpha \in $\mathbb{R}_{+}$, \beta \in (0,1) (\beta is also
-    called l1_ratio in this text)
+    where r $\in$ $\{0,1\}^d$, $\theta$ $\in$l $\mathbb{R}^d$, $\lambda$ $\in$
+    $\mathbb{R}_{+}$, $\beta$ $\in$ (0,1) ($\beta$ is also called l1 ratio in this
+    text)
 
     For any constant c
 
-    pena(\theta) = c
+    $pena(\theta) = c$
 
     is convex because pena is convex (addition of positively weighted norms)
 
-    similarly, q(\theta) = c is also convex
+    similarly, $q(\theta) = c$ is also convex
 
     c can be chosen so that slope in the first quadrant between known risk
     factor x and unknown risk factor is -1
 
-    we define eye norm as a an atomic norm $||\cdot||_A$ as introduced in
+    we define eye norm as a an atomic norm $ \Vert \cdot \Vert_A$ as introduced in
     cite:chandrasekaran2012convex
 
-    $||x||_A := \inf\{t>0|x \in t conv(A)\}$
+    $ \Vert x \Vert_A := \inf\{t>0 \mid x \in t conv(A)\}$
 
-    Let $A=\{x|q(x) = \frac{\beta^2}{1-\beta}\}$, we get the eye
+    Let $A=\{x \mid q(x) = \frac{\beta^2}{1-\beta}\}$, we get the eye
     penalty
 
-    Note that A is already a convex set, adding in scaling factor \alpha, equivalently we write
+    Note that A is already a convex set, adding in scaling factor $\lambda$, we have
 
-    $eye(x) = \alpha \inf\{t>0|x \in t\{ x | q(x) = \frac{\beta^2}{1-\beta}\}\}$
+    \begin{equation} \label{eye-defn-orig}
+    eye(x) = \lambda \inf\{t>0 \mid x \in \{t x \mid q(x) = \frac{\beta^2}{1-\beta}\}\}
+    \end{equation}
 
-**** derivation
+    We will show that \eqref{eye-defn-orig} is equivalent to \eqref{eye-defn}
+    #+END_LaTeX
+
+**** derivation of eqref:eye-defn-orig
 
      The main intuition is to set c so that the slope in the first quadrant
      between known risk factor x and unknown risk factor is -1. Since we only
      care about this interaction between known and unknown risk factors and that
-     {x|pena(x)=c} is symmetric about origin, WLOG, we let y be the unknown
+     ${x \mid pena(x)=c}$ is symmetric about origin, WLOG, we let y be the unknown
      feature and x be the known risk factor with constraint y \geq 0, x \geq 0.
 
      \begin{align}
-     &\  \alpha [2 \beta y + (1-\beta) x^2] = c \\
-     &\rightarrow 2 \beta y + (1-\beta) x^2 = \frac{c}{\alpha} \\
-     &\rightarrow y = \frac{c}{2\alpha\beta} - \frac{(1-\beta) x^2}{2 \beta}\\
-     &\rightarrow y = 0 \Rightarrow x = \sqrt{\frac{c}{\alpha(1-\beta)}}\\ 
+     &\  \lambda [2 \beta y + (1-\beta) x^2] = c \\
+     &\rightarrow 2 \beta y + (1-\beta) x^2 = \frac{c}{\lambda} \\
+     &\rightarrow y = \frac{c}{2\lambda\beta} - \frac{(1-\beta) x^2}{2 \beta}\\
+     &\rightarrow y = 0 \Rightarrow x = \sqrt{\frac{c}{\lambda(1-\beta)}}\\ 
      &\rightarrow f'(x) = -\frac{(1-\beta)}{\beta}x\\
-     &\rightarrow f'(\sqrt{\frac{c}{\alpha(1-\beta)}}) = -\frac{1-\beta}{\beta} \sqrt{\frac{c}{\alpha(1-\beta)}} = -1 \\
-     &\rightarrow c = \frac{\alpha\beta^2}{1-\beta}\\
+     &\rightarrow f'(\sqrt{\frac{c}{\lambda(1-\beta)}}) = -\frac{1-\beta}{\beta} \sqrt{\frac{c}{\lambda(1-\beta)}} = -1 \\
+     &\rightarrow c = \frac{\lambda\beta^2}{1-\beta}\\
      &\rightarrow 2 \beta y + (1-\beta) x^2 = \frac{\beta^2}{1-\beta}
      \end{align}
 
@@ -699,7 +741,7 @@ eye penalty
   1) eye(t \theta) = |t| eye(\theta)
   2) eye(\theta + \beta) \leq eye(\theta) + eye(\beta)
   3) eye(\theta) = 0 iff \theta = 0
-+ \beta doesn't affect the shape of contour, so no need to search over \beta
++ \beta conserve the shape of contour label:shape_conservation
 
   #+BEGIN_proof
 
@@ -714,42 +756,40 @@ eye penalty
 
   we can equivalently write B_1 and B_2 as: (by definition and a1 and q convex)
 
-  B_1 = t {x: x \in {x | q_{\beta_1}(x) = $\frac{\beta_1^2}{1-\beta_1}$ }}
+  B_1 = t {x: x \in {x $\mid$ q_{\beta_1}(x) = $\frac{\beta_1^2}{1-\beta_1}$ }}
 
-  B_2 = t {x: x \in {x | q_{\beta_2}(x) = $\frac{\beta_2^2}{1-\beta_2}$ }}
+  B_2 = t {x: x \in {x $\mid$ q_{\beta_2}(x) = $\frac{\beta_2^2}{1-\beta_2}$ }}
 
-  let B_1' = {x: x \in {x | q_{\beta_1}(x) = $\frac{\beta_1^2}{1-\beta_1}$ }}
-  and B_2' = {x: x \in t {x | q_{\beta_2}(x) = $\frac{\beta_1^2}{1-\beta_2}$ }}
+  let B_1' = {x: x \in {x $\mid$ q_{\beta_1}(x) = $\frac{\beta_1^2}{1-\beta_1}$ }}
+  and B_2' = {x: x \in t {x $\mid$ q_{\beta_2}(x) = $\frac{\beta_1^2}{1-\beta_2}$ }}
 
   Claim: B_2' = $\frac{\beta_2 (1-\beta_1)}{\beta_1 (1-
-  beta_2)}$ B_1'
+  \beta_2)}$ B_1'
 
   It should be clear that if this claim is true then B_1 is similar to B_2
   and we are done
 
   take x \in B_1'
 
-  then $q_{\beta_1}(x) = 2 \beta_1 ||(1-r) \odot x||_1 +
-  (1-\beta_1) ||r \odot x||_2^2 = \frac{\beta_1^2}{1-\beta_1}$
+  then $q_{\beta_1}(x) = 2 \beta_1  \Vert (1-r) \odot x \Vert_1 +
+  (1-\beta_1)  \Vert r \odot x \Vert_2^2 = \frac{\beta_1^2}{1-\beta_1}$
 
   let x' = $\frac{\beta_2 (1-\beta_1)}{\beta_1 (1-\beta_2)}$ x
 
-  \begin{align}
-  q_{\beta_2}(x') &= 2 \beta_2 ||(1-r) \odot x'||_1 +
-  (1-\beta_2) ||r \odot x'||_2^2\\
-  &= \frac{2 \beta_2^2 (1-\beta_1)}{\beta_1 (1-\beta_2)} ||(1-r) \odot x||_1 + 
-  \frac{\beta_2^2 (1-\beta_1)^2}{\beta_1^2 (1-\beta_2)} ||r \odot x||_2^2\\
-  &= \frac{\beta_2^2 (1-\beta_1)}{\beta_1^2 (1-\beta_2)} (2 \beta_1 ||(1-r) \odot x||_1 +
-  (1-\beta_1) ||r \odot x||_2^2)\\
+  \begin{align*}
+  q_{\beta_2}(x') &= 2 \beta_2  \Vert (1-r) \odot x' \Vert_1 +
+  (1-\beta_2)  \Vert r \odot x' \Vert_2^2\\
+  &= \frac{2 \beta_2^2 (1-\beta_1)}{\beta_1 (1-\beta_2)}  \Vert (1-r) \odot x \Vert_1 + 
+  \frac{\beta_2^2 (1-\beta_1)^2}{\beta_1^2 (1-\beta_2)}  \Vert r \odot x \Vert_2^2\\
+  &= \frac{\beta_2^2 (1-\beta_1)}{\beta_1^2 (1-\beta_2)} (2 \beta_1  \Vert (1-r) \odot x \Vert_1 +
+  (1-\beta_1)  \Vert r \odot x \Vert_2^2)\\
   &= \frac{\beta_2^2 (1-\beta_1)}{\beta_1^2 (1-\beta_2)} \frac{\beta_1^2}{1-\beta_1} \\
   &= \frac{\beta_2^2}{1-\beta_2}
-  \end{align}
+  \end{align*}
 
   so x' \in B_2'. Thus $\frac{\beta_2 (1-\beta_1)}{\beta_1 (1-
   beta_2)}$ B_1' \subset B_2'. The other direction is similarly proven.
   #+END_proof
-
-
 + eye as a generalization of elastic net, lasso, and ridge
   
   By relaxing the constraint of r from binary to float, we can recover elastic
@@ -761,7 +801,6 @@ eye penalty
   [[./contour/eye_ridge.png]]
   
   [[./contour/eye_lasso.png]]
-
 **** extending r to [0,1]^d 
 At times, it makes sense for risk factor to be fractionally weighted (eg. odds
 ratio in medical documents).
@@ -814,12 +853,17 @@ r_1 = 1.0
 [[./contour/eye_1_0.png]]
 
 *** elastic net
-    \alpha (\beta ||\theta||_1 + 0.5 (1 - \beta) ||\theta||_2^2) where \beta \in [0,1]
+    #+BEGIN_LaTeX
+    $\lambda (\beta  \Vert \theta \Vert_1 + 0.5 (1 - \beta)  \Vert \theta \Vert_2^2)$ where $\beta$ $\in$ [0,1]
+    #+END_LaTeX
 
     [[./contour/enet_add.png]] 
 
 *** lasso cite:tibshirani1996regression
-    \alpha ||\theta||_1
+    #+BEGIN_LaTeX
+    $\lambda  \Vert \theta \Vert_1$
+    #+END_LaTeX
+
 
     [[./contour/lasso_add.png]]
 
@@ -831,16 +875,18 @@ r_1 = 1.0
 
     where $\theta^{OLS}$ is the value of ordinary least square
 
-    and $S_{\alpha}(x) = x max(0, 1-\frac{\alpha}{|x|})$ (the soft threshold
+    and $S_{\lambda}(x) = x max(0, 1-\frac{\lambda}{|x|})$ (the soft threshold
     function, note that in the limiting case converge to $y=x$)
 
 *** ridge
-0.5 \alpha ||\theta||_2^2
+    #+BEGIN_LaTeX
+    $0.5 \lambda  \Vert \theta \Vert_2^2$    
+    #+END_LaTeX
 
-[[./contour/ridge_add.png]]
+    [[./contour/ridge_add.png]]
 
 *** OWL
-\alpha \sum_{i=1}^n w_i |x|_{[i]} where w \in K_{m+} (monotone nonnegative cone)
+\lambda \sum_{i=1}^n w_i |x|_{[i]} where w \in K_{m+} (monotone nonnegative cone)
 
 [[./contour/OWL_w1=2>w2=1.png]]
 
@@ -862,28 +908,33 @@ in the regular case, the minimal atomic set for this norm is known (the corners
 are easily calculated)
 
 *** weighted lasso
-$\alpha ||w \odot \theta||_1$ where w \in $\mathbb{R}_+^d$
+    #+BEGIN_LaTeX
+    $\lambda  \Vert w \odot \theta \Vert_1$ where w $\in$ $\mathbb{R}_+^d$    
+    #+END_LaTeX
 
-[[./contour/wlasso_add.png]]
+    [[./contour/wlasso_add.png]]
 
 *** weighted ridge 
-$0.5 \alpha ||w \odot \theta||_2^2$ where w \in $\mathbb{R}_{+}^{d}$
+    #+BEGIN_LaTeX
+    $0.5 \lambda  \Vert w \odot \theta \Vert_2^2$ where w $\in$ $\mathbb{R}_{+}^{d}$
+    #+END_LaTeX
 
-[[./contour/wridge_add.png]]
+    [[./contour/wridge_add.png]]
 
 *** old penalty
-$\alpha (0.5 (1-\beta) ||r \odot \theta||_2^2 + \beta ||(1-r) \odot \theta||_1)$
-where r \in {0,1}^d, \theta \in $\mathbb{R}^d$, \alpha \in $\mathbb{R}$, \beta \in [0,1]
+    #+BEGIN_LaTeX
+    $\lambda (0.5 (1-\beta)  \Vert r \odot \theta \Vert_2^2 + \beta  \Vert (1-r) \odot \theta \Vert_1)$
+    where r $\in$ ${0,1}^d$, $\theta$ $\in$ $\mathbb{R}^d$, $\lambda$ $\in$ $\mathbb{R}$, $\beta$ $\in$ [0,1]
+    #+END_LaTeX
 
-[[./contour/penalty_add.png]]
+    [[./contour/penalty_add.png]]
 
 # references
-bibliographystyle:plain
-bibliography:ref.bib
+    bibliographystyle:plain
+    bibliography:ref.bib
 
 * for discussion:
-1. idea for experiment 6,7,8
-2. validate method for reporting pvalue
+1. validate method for reporting p-value
    
    H_0: mean loss or auroc across method
    
@@ -891,8 +942,37 @@ bibliography:ref.bib
 
    test if H_0 different from H_1?
 
-* next
-1. wrap up simulation
-2. try on real data
-3. migrate to server to run the experiments
-4. continue the writeup
+* DONE with real data
+  + minimal implementation with example to jeeheh
+  + run through sparse matrix
+    
+  (800000,50000)
+  scipy sparse matrix
+  
+  format: csr  
+  
+* TODO literature review on interpretability
+  
+  cite:bibal2016interpretability
+
+  cite:lipton2016mythos
+  
+  + different levels of interpretability
+    
+    simulatability, decomposability, algorithmic transparency, post hoc
+
+  + consider other methods alongside accuracy
+  + usability of the model
+  + detect anomaly in the model
+  + credit denial legally need clear reasons
+  + model itself is a source of knowledge???
+
+** what is interpretability and how to measure it
+   
+   simplicity $\neq$ acceptability: eg. a shallow decision tree
+
+   justifiability: the model is in line with existing domain knowledege cite:martens2011performance
+
+    
+  
+  
