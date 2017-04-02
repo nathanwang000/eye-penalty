@@ -17,37 +17,22 @@ def extract(record):
         return list(map(lambda e: e[item],record))
     return extractRecord
 
-def plotResult(fn, title=None, save=True):
+def plotResult(fn, title=None, save=True, criteria="loss"):
     record = json.load(open(fn))
     
     extractRecord = extract(record)
-    valloss = extractRecord('validation/main/loss')
-    trloss = extractRecord('main/loss')
-    valacc = extractRecord('validation/main/accuracy')
-    tracc = extractRecord('main/accuracy')
+    valc = extractRecord('validation/main/%s' % criteria)
+    trc = extractRecord('main/%s' % criteria)    
     
-    # loss
-    plt.plot(valloss, label='val loss')
-    plt.plot(trloss, label='tr loss')
+    plt.plot(valc, label='val %s' % criteria)
+    plt.plot(trc, label='tr %s' % criteria)
     plt.legend()
-    if title: plt.title(title + " loss")
-    else: plt.title("loss")
+    if title: plt.title(title + " %s" % criteria)
+    else: plt.title(criteria)
     if save:
-        plt.savefig(path.join(path.dirname(fn),"loss_plot.png"))
+        plt.savefig(path.join(path.dirname(fn),"%s_plot.png" % criteria))
         plt.clf()
     else: plt.show()
-
-    # acc
-    plt.plot(valacc, label='val acc')
-    plt.plot(tracc, label='tr acc')
-    plt.legend()
-    if title: plt.title(title + " accuracy")
-    else: plt.title("acurracy")
-    if save:
-        plt.savefig(path.join(path.dirname(fn),"acc_plot.png"))
-        plt.clf()        
-    else: plt.show()
-
 
 # plots for seeing if training complete
 def genplots(dirname=dirname):
@@ -55,7 +40,8 @@ def genplots(dirname=dirname):
         if not path.isdir(path.join(dirname, fn)) or\
            fn.startswith("montage"): continue
         print(fn)
-        plotResult(path.join(dirname, fn, 'log'), fn)
+        plotResult(path.join(dirname, fn, 'log'), title=fn, criteria="loss")
+        plotResult(path.join(dirname, fn, 'log'), title=fn, criteria="accuracy")        
 
 
 def returnBest(methods=regs, criteria='validation/main/loss',
