@@ -176,6 +176,7 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata(10,2),
                                    out=outdir)
         logname = "log_"+str(namebase+i)
         trainer.extend(extensions.LogReport(log_name=logname))
+        trainer.extend(extensions.ProgressBar())        
         if printreport:
             # validate
             test_iter = iterators.SerialIterator\
@@ -192,7 +193,7 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata(10,2),
         try:
             trainer.run()
             should_break=False
-        except:
+        except KeyboardInterrupt:
             should_break=True
         # save model: don't save if weights are invalid
         if trainer.observation.get('main/loss') is not None and\

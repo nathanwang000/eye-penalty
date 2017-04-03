@@ -28,8 +28,10 @@ class SparseDataset(object):
         self._length = length
 
     def __getitem__(self, index):
+        index = slice(index.start, min(index.stop, self._length), index.step)
         # convert to dense matrix for use
-        batches = [np.asarray(dataset[index].todense()) if sparse.issparse(dataset)
+        batches = [np.asarray(dataset[index].todense().astype(np.float32))
+                   if sparse.issparse(dataset)
                    else dataset[index] for dataset in self._datasets]
         # batches = [dataset[index] for dataset in self._datasets] # old
         if isinstance(index, slice):

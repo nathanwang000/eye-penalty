@@ -946,7 +946,9 @@ are easily calculated)
   + minimal implementation with example to jeeheh
   + run through sparse matrix
     
-  (800000,50000)
+  100 * 3 * 1000 took 0.5 min 4000 min
+
+  (800,000,50,000)
   scipy sparse matrix
   
   format: csr  

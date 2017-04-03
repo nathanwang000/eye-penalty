@@ -336,9 +336,10 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
     for i in range(num_runs):
         X, y = datagen()
         Xval, yval = datagen()
+
         if printreport:
             print("percentage of ones:", y.mean())
-            
+
         # preprocess
         normalize = normalizer()
         X = normalize(X)
@@ -377,9 +378,9 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
                                                    ]))
 
         try:
-            trainer.run()
+            trainer.run()            
             should_break=False
-        except:
+        except KeyboardInterrupt:
             traceback.print_exc()
             should_break=True
         # save model
