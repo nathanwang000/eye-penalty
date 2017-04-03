@@ -18,7 +18,7 @@ def loadData(method, basedir="./"):
 
 nbins = 50
 
-def plotFeature(f_num, nbins=50, savefig=False, basedir="./", regs=regs):
+def plotFeature(f_num, nbins=nbins, savefig=False, basedir="./", regs=regs):
     for i, reg in enumerate(regs):
         data = loadData(reg, basedir=basedir)
         plt.hist(data[:,f_num], nbins, alpha=0.5,
@@ -33,12 +33,12 @@ def plotFeature(f_num, nbins=50, savefig=False, basedir="./", regs=regs):
 # plotFeature(1) # x1
 # plotFeature(2) # b
 
-def plotRatio(nbins=50, savefig=False, basedir="./", regs=regs):
+def plotRatio(nbins=nbins, savefig=False, basedir="./", regs=regs):
     for i, reg in enumerate(regs):
         data = loadData(reg, basedir=basedir)
-        plt.hist(data[:,0] / data[:, 1], nbins, alpha=0.5,
+        plt.hist(np.abs(data[:,0] / data[:, 1])-1, nbins, alpha=0.5,
                  label=reg, color=colors[i])
-        tstr = r"$\frac{\theta_0}{\theta_1}$ distribution"
+        tstr = r"$\frac{\theta_0}{\theta_1}-1$ distribution"
         plt.title(tstr)
         plt.legend()
     if savefig: plt.savefig('figures/'+tstr.replace(" ","_")+".png")
@@ -86,7 +86,6 @@ def plotBar(n_features, savefig=False, basedir="./", regs=regs):
 # plotBar(3, True)
 
 def plotPerformance(basedir="./", regs=regs, title=""):
-    # todo: to redo
     rects = []
     means = []
     stds  = []

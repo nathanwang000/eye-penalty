@@ -5,13 +5,14 @@ import plotResult
 from scipy.linalg import block_diag
 
 def experiment(paramsDict, datagen, num_runs=100,
-               basedir_prefix="", niterations=1000):
+               basedir_prefix="", niterations=1000,
+               printreport=False, resume=False):
     def run_with_reg_wrapper(num_runs):
         def _f(*args,**kwargs):
             return comb_loss.run_with_reg(*args, **kwargs,
                                           num_runs=num_runs,
-                                          printreport=False,
-                                          resume=True,
+                                          printreport=printreport,
+                                          resume=resume,
                                           datagen=datagen,
                                           niterations=niterations)
         return _f

@@ -9,16 +9,17 @@ import comb_loss, sys, os
 
 # in fact choose the sparsest sln in the top 20% of the criteria
 # should avoid race condition
-def noise2d(index):
+def noise2d(index, regs=None, niterations=5000, signoise=0):
     name = "noise2d/" + str(index)
     os.makedirs(name, exist_ok=True)    
-    datagen = lambda: comb_loss.gendata(signoise=0.2, n=100)
+    datagen = lambda: comb_loss.gendata(signoise=signoise, n=100) # todo
     risk = comb_loss.generate_risk(0, 0, 0, '2d')
 
+    w0 = 1-risk
     w1 = 2-risk # penalize unknown more
     
     paramsDict = {
-        'eye':     [(risk, 0.01)],
+        'eye':     [(risk, 1e-3)], # todo
         'wlasso':  [(w1, 0.01)],
         'wridge':  [(w1, 0.01)],
         'penalty': [(risk, 0.01, 0.4)],
@@ -26,11 +27,15 @@ def noise2d(index):
         'lasso':   [(0.01,)],
         'enet':    [(0.01, 0.2)]
     }
+    if regs: paramsDict = dict((m, args) for m, args in paramsDict.items() if m in regs)
     experiment(paramsDict,
                datagen=datagen,
                num_runs=1,
                basedir_prefix=name,
-               niterations=1000)
+               printreport=True, # todo 
+               resume=True,
+               niterations=niterations
+    )
 
 def diffTheta(index):
     name = "diff_theta/" + str(index)
@@ -63,5 +68,5 @@ def diffTheta(index):
 
 
 # diffTheta(sys.argv[1])
-noise2d(sys.argv[1])
+# noise2d(sys.argv[1])
 

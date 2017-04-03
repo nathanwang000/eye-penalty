@@ -1,4 +1,5 @@
 import numpy as np
+import traceback
 from numpy import array
 from math import sqrt
 import matplotlib.pyplot as plt
@@ -191,7 +192,7 @@ def genDiffTheta(n=1000): # bernoulli so noise also on y
         
     return _datagen, (theta, risk, nd)
 
-# noise added on X, so really is correlation structure that's changed, todo:
+# noise added on X, so really is correlation structure that's changed
 def genPartitionData(n=n, nrgroups=11, nirgroups=11, pergroup=10,\
                      signoise=0.2, scaleh=2, munoise=0,\
                      left=-3, right=1,
@@ -219,7 +220,7 @@ def genPartitionData(n=n, nrgroups=11, nirgroups=11, pergroup=10,\
         plt.show()        
     return X.astype(np.float32), y.astype(np.float32)
 
-# noise added on X, so really is correlation structure that's changed, todo:
+# noise added on X, so really is correlation structure that's changed
 def gendata(plot=False, name=None, d=2,
             signoise=0.2, scaleh=2, munoise=0,
             left=-2.5, right=1.5, n=100):
@@ -260,9 +261,8 @@ def lossfun(y, t):
         y = x * (xmax-xmin) + xmin
         return y
     
-    # max likelihood
+    # max likelihood: has trouble when yhat=0 or 1 so need to scale it
     smooth = 1e-6
-    # yhat = F.clip(y, smooth, 1-smooth)
     yhat = linscale(y, smooth, 1-smooth)
     logloss = F.sum(F.where(t.data > 0,
                             -F.log(yhat),
@@ -291,19 +291,30 @@ class Regresser(Chain):
             # sparsity = np.isclose(0,theta.data).sum() /\
             #            theta.data.size
 
-        n = y.data.size
-        acc = (n-np.sum(abs((y.data > 0.5) - t.data))) / n
-        try: # y may be nan if predictor.W is nan
-            y_true = t.data if isinstance(t, Variable) else t 
-            auroc = roc_auc_score(y_true, y.data)
-            fpr, tpr, threshold = roc_curve(y_true, y.data)
-        except:
-            auroc = -1
+        acc = calcAcc(y, t)
+        auroc = calcAuroc(y, t)
+
         report({'loss': loss,
-                'penalty': regloss,
+                'total_loss': loss+regloss,
+                'penalty': loss/regloss, 
+                'sparsity': abs(self.predictor.l1.W.data[0,0] /
+                                self.predictor.l1.W.data[0,1]),
                 'accuracy': acc,
                 'auroc': auroc}, self)
         return loss + regloss
+
+def calcAcc(y, t): # y is a variable
+    return (n-np.sum(abs((y.data > 0.5) - t.data))) / y.data.size
+
+def calcAuroc(y, t):
+    try: # y may be nan if self.predictor.l1.W is nan, or y could only have 1 label
+        y_true = t.data if isinstance(t, Variable) else t 
+        auroc = roc_auc_score(y_true, y.data)        
+        # fpr, tpr, threshold = roc_curve(y_true, y.data)
+    except:
+        auroc = -1
+    return auroc
+    
 
 ############ run #############################
 def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
@@ -359,15 +370,17 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
             trainer.extend(extensions.PrintReport(['validation/main/auroc',
                                                    'main/auroc',
                                                    'validation/main/accuracy',
-                                                   'main/accuracy',
-                                                   # 'validation/main/loss',
+                                                   # 'main/accuracy',
+                                                   'validation/main/loss',
+                                                   'main/penalty'
                                                    # 'main/loss',
-                                                   'main/penalty']))
-        trainer.run()                       
-        try:
+                                                   ]))
 
+        try:
+            trainer.run()
             should_break=False
         except:
+            traceback.print_exc()
             should_break=True
         # save model
         if trainer.observation.get('main/loss') is not None and\

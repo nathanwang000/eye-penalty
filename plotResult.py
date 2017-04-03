@@ -26,6 +26,8 @@ def plotResult(fn, title=None, save=True, criteria="loss"):
     
     plt.plot(valc, label='val %s' % criteria)
     plt.plot(trc, label='tr %s' % criteria)
+    print(valc[-1])
+    # plt.ylim([0,1])
     plt.legend()
     if title: plt.title(title + " %s" % criteria)
     else: plt.title(criteria)
