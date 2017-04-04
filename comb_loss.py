@@ -288,15 +288,14 @@ class Regresser(Chain):
         y = self.predictor(x)
         loss = self.lossfun(y, t)
         regloss = 0
-        # sparsity = 0 # not really working as most are not exact 0
+
         if self.regularizer:
             W = self.predictor.l1.W
             b = self.predictor.l1.b
             # theta = F.concat((F.flatten(W), b), 0)
             theta = F.flatten(W) # don't regularize b
             regloss = self.regularizer(theta)
-            # sparsity = np.isclose(0,theta.data).sum() /\
-            #            theta.data.size
+            sparsity = gini(theta.data)
 
         acc = calcAcc(y, t)
         auroc = calcAuroc(y, t)
@@ -304,8 +303,7 @@ class Regresser(Chain):
         report({'loss': loss,
                 'total_loss': loss+regloss,
                 'penalty': loss/regloss, 
-                'sparsity': abs(self.predictor.l1.W.data[0,0] /
-                                self.predictor.l1.W.data[0,1]),
+                'sparsity': sparsity,
                 'accuracy': acc,
                 'auroc': auroc}, self)
         return loss + regloss
