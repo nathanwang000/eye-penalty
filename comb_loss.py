@@ -1,5 +1,5 @@
 import numpy as np
-import traceback
+import traceback, json
 from numpy import array
 from math import sqrt
 import matplotlib.pyplot as plt
@@ -14,7 +14,7 @@ import os
 from itertools import product
 from sklearn.metrics import roc_auc_score, roc_curve
 import hashlib, pickle
-import itertools
+import itertools, shutil
 from pyemd import emd_with_flow
 from scipy.linalg import block_diag
 
@@ -50,6 +50,13 @@ def normalizer(mu=0, std=1):
         n += X.shape[0]
         return transform(X)
     return normalize
+
+def gini(c):
+    # calculate the gini coefficient for array c    
+    c = np.sort(c) / np.sum(np.abs(c))
+    n = c.size
+    w = np.array([(n-k+0.5)/n for k in range(1, n+1)])    
+    return 1-2*(c*w).sum()
 
 ############ penalties ##########################
 def eye(r, alpha=1):
@@ -315,16 +322,25 @@ def calcAuroc(y, t):
         auroc = -1
     return auroc
     
-
+def getModelOptimizer(reg):
+    # define model and optimizer
+    model = Regresser(Predictor(1),
+                      lossfun=lossfun,
+                      regularizer=reg)
+    optimizer = optimizers.AdaDelta()
+    optimizer.setup(model)
+    return model, optimizer
+    
 ############ run #############################
 def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
                  printreport=False, resume=True, niterations=1000,
                  namebase=None):
+
     print(outdir)
     thetas = []
 
     # open dir to see from log? to start
-    if not namebase:
+    if namebase is None:
         namebase = 0
         if resume and os.path.exists(outdir):
             for fn in os.listdir(outdir):
@@ -344,12 +360,23 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
         normalize = normalizer()
         X = normalize(X)
         Xval = normalize(Xval, train=False)
-        # define model        
-        model = Regresser(Predictor(1),
-                          lossfun=lossfun,
-                          regularizer=reg)
-        optimizer = optimizers.AdaDelta()
-        optimizer.setup(model)
+        # define model
+        model, optimizer = getModelOptimizer(reg)
+        modelpath = os.path.join(outdir, "%d.model" % (namebase+i))
+        optpath = os.path.join(outdir, "%d.state" % (namebase+i))
+        logname = "log_%d" % (namebase+i)
+        logpath = os.path.join(outdir, logname)
+        # if resume and the model we are using has a log file
+        using_old_model = False        
+        if resume and\
+           os.path.isfile(modelpath) and\
+           os.path.isfile(optpath) and\
+           os.path.isfile(logpath):
+            using_old_model = True
+            serializers.load_npz(modelpath, model)            
+            serializers.load_npz(optpath, optimizer)
+            shutil.move(logpath, logpath+".old")
+        
         # train model
         train_iter = iterators.SerialIterator(TupleDataset(X,y),
                                                   batch_size=100,
@@ -357,7 +384,7 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
         updater = training.StandardUpdater(train_iter, optimizer)
         trainer = training.Trainer(updater, (niterations, 'epoch'),
                                    out=outdir)
-        logname = "log_"+str(namebase+i)
+
         trainer.extend(extensions.LogReport(log_name=logname))
 
         # validate
@@ -395,6 +422,16 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
         theta = F.concat((F.flatten(W), b), 0)
         thetas.append(theta.data)
 
+        serializers.save_npz(modelpath, model)
+        serializers.save_npz(optpath, optimizer)
+
+        if using_old_model:
+            # combine old and new logs            
+            newlog = json.load(open(logpath))
+            oldlog = json.load(open(logpath+".old"))
+            oldlog.extend(newlog)
+            json.dump(oldlog, open(logpath, 'w'))
+            
         if should_break: break
 
     thetafn = os.path.join(outdir, "theta.npy")        
@@ -413,7 +450,7 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
 def paramsSearch2d(datagen=lambda: gendata(n=100,signoise=0.2),
                    risk = np.array([1,0]),
                    basedir="val",
-                   methods=['lasso', 'ridge', 'enet', 'penalty',
+                   methods=['lasso', 'enet', 'penalty',
                             'wlasso', 'wridge', 'owl', 'eye'],
                    niterations = 1000):
     # don't penalyze b
@@ -451,11 +488,7 @@ def paramsSearch2d(datagen=lambda: gendata(n=100,signoise=0.2),
             print(outdir)
             reg = f(*arg)
             # train
-            model = Regresser(Predictor(1),
-                              lossfun=lossfun,
-                              regularizer=reg)
-            optimizer = optimizers.AdaDelta()
-            optimizer.setup(model)
+            model, optimizer = getModelOptimizer(reg)
             train_iter = iterators.SerialIterator\
                          (TupleDataset(Xtrain,ytrain),
                           batch_size=100,
@@ -479,7 +512,7 @@ def paramsSearch2d(datagen=lambda: gendata(n=100,signoise=0.2),
 def paramsSearchMd(datagen,
                    risk,
                    basedir="val",
-                   methods=['lasso', 'ridge', 'eye', 'owl',
+                   methods=['lasso', 'eye', 'owl',
                             'wlasso', 'wridge', 'enet', 'penalty'],
                    niterations=1000):
     Xtrain, ytrain = datagen()
@@ -526,11 +559,7 @@ def paramsSearchMd(datagen,
             print(outdir)
             reg = f(*arg)
             # train
-            model = Regresser(Predictor(1),
-                              lossfun=lossfun,
-                              regularizer=reg)
-            optimizer = optimizers.AdaDelta()
-            optimizer.setup(model)
+            model, optimizer = getModelOptimizer(reg)
             train_iter = iterators.SerialIterator\
                          (TupleDataset(Xtrain,ytrain),
                           batch_size=100,

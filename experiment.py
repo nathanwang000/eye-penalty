@@ -28,12 +28,14 @@ def experiment(paramsDict, datagen, num_runs=100,
            'eye':     comb_loss.eye}
     # actual run
     for method in paramsDict:
-        args = paramsDict[method][0]
+        args = paramsDict[method]
         ####function(args)#####,directory to save
         outdir = os.path.join(basedir_prefix, "result_" + method)
         run(r2f[method](*args), outdir)
 
 
+############################################### user funtions (all are outdated)
+'''
 def example():
     name = "example"
     gridSearch = comb_loss.paramsSearch2d
@@ -48,7 +50,7 @@ def example():
                num_runs=30,
                basedir_prefix=name)
 
-############################################### user funtions    
+
 def noise2d(): # torun
     name = "noise2d"
     gridSearch = comb_loss.paramsSearch2d
@@ -193,5 +195,4 @@ if __name__ == '__main__':
     # sweepBinaryR()
     # sweepFracR()    
     # sweepCov()
-
-    
+'''

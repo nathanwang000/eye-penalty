@@ -2,12 +2,6 @@ from experiment import experiment
 import numpy as np
 import comb_loss, sys, os
 
-# todo:
-# parameter choice criteria
-# for each method, choose the one with the lowest sparsity score
-# essentially eyeball the result because has to keep performance constant
-
-# in fact choose the sparsest sln in the top 20% of the criteria
 # should avoid race condition
 def noise2d(index, regs=None, niterations=5000, signoise=0, alpha=0.01, name="default"):
     name = os.path.join("noise2d", name, str(index))
@@ -19,21 +13,49 @@ def noise2d(index, regs=None, niterations=5000, signoise=0, alpha=0.01, name="de
     w1 = 2-risk # penalize unknown more
     
     paramsDict = {
-        'eye':     [(risk, alpha)], # todo
-        'wlasso':  [(w1, alpha)],
-        'wridge':  [(w1, alpha)],
-        'penalty': [(risk, alpha, 0.4)],
-        'owl':     [([2,1], alpha)],
-        'lasso':   [(alpha,)],
-        'enet':    [(alpha, 0.2)]
+        'eye':     (risk, alpha),
+        'wlasso':  (w1, alpha),
+        'wridge':  (w1, alpha),
+        'penalty': (risk, alpha, 0.4),
+        'owl':     ([2,1], alpha),
+        'lasso':   (alpha,),
+        'enet':    (alpha, 0.2)
     }
     if regs: paramsDict = dict((m, args) for m, args in paramsDict.items() if m in regs)
     experiment(paramsDict,
                datagen=datagen,
                num_runs=1,
                basedir_prefix=name,
-               printreport=True, # todo 
+               printreport=False, 
                resume=True,
+               niterations=niterations)
+
+def diffTheta(index, niterations=5000, name="default"):
+    name = os.path.join("diff_theta/", naame, str(index))
+    os.makedirs(name, exist_ok=True)
+    datagen, (theta, risk, nd) = comb_loss.genDiffTheta(n=5000)
+    
+    # need to save theta, risk, nd
+    np.save(os.path.join(name, "theta.npy"), theta)
+    np.save(os.path.join(name, "risk.npy"), risk)
+    np.save(os.path.join(name, "nd.npy"), nd)        
+
+    w1 = 2-risk
+    owl1 = np.zeros(risk.size)
+    owl1[0] = 1
+    paramsDict = {
+        'eye':     (risk, 0.01),
+        'wlasso':  (w1, 0.01),
+        'wridge':  (w1, 0.01),
+        'penalty': (risk, 0.01, 0.4),
+        'owl':     (owl1, 0.01),
+        'lasso':   (0.01,),
+        'enet':    (0.01, 0.2)
+    }
+    experiment(paramsDict,
+               datagen=datagen,
+               num_runs=1,
+               basedir_prefix=name,
                niterations=niterations)
 
 if __name__ == '__main__':
@@ -42,39 +64,6 @@ if __name__ == '__main__':
     #     noise2d(sys.argv[1], signoise=s, name="noise%.2f" % s)
 
     # noise2d(sys.argv[1], alpha=1e-3, niterations=15000, name="alpha0.001")
-    noise2d(sys.argv[1], alpha=1e-4, niterations=30000, name="alpha0.0001")    
-
-# untested
-def diffTheta(index):
-    name = "diff_theta/" + str(index)
-    os.makedirs(name, exist_ok=True)
-    datagen, (theta, risk, nd) = comb_loss.genDiffTheta(n=5000)
+    # noise2d(sys.argv[1], alpha=1e-4, niterations=30000, name="alpha0.0001")    
+    diffTheta(sys.argv[1])
     
-    # need to save theta, risk, nd
-    np.save(os.path.join(name, "theta.npy"), theta)
-    np.save(os.path.join(name, "risk.npy"), risk)
-    np.save(os.path.join(name, "nd.npy"), nd)        
-    
-    w1 = 2-risk
-    owl1 = np.zeros(risk.size)
-    owl1[0] = 1
-    paramsDict = {
-        'eye':     [(risk, 0.01)],
-        'wlasso':  [(w1, 0.01)],
-        'wridge':  [(w1, 0.01)],
-        'penalty': [(risk, 0.01, 0.4)],
-        'owl':     [(owl1, 0.01)],
-        'lasso':   [(0.01,)],
-        'enet':    [(0.01, 0.2)]
-    }
-    experiment(paramsDict,
-               datagen=datagen,
-               num_runs=1,
-               basedir_prefix=name,
-               niterations=1000
-    )
-
-
-# diffTheta(sys.argv[1])
-# noise2d(sys.argv[1])
-
