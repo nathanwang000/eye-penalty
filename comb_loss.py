@@ -19,6 +19,8 @@ from pyemd import emd_with_flow
 from scipy.linalg import block_diag
 
 ############ utility functions ##################
+SMOOTH_CONST = 1e-10
+
 def l1norm(v):
     return F.sum(abs(v))
 
@@ -62,7 +64,9 @@ def gini(c):
 def eye(r, alpha=1):
     def f_(theta):
         return alpha * (l1norm((1-r)*theta) +
-                        F.sqrt(l1norm((1-r)*theta)**2 + l2normsq(r*theta)))
+                        F.sqrt(l1norm((1-r)*theta)**2 +
+                               l2normsq(r*theta) +
+                               SMOOTH_CONST))
     return f_
 
 def old_eye(r, alpha=1):
@@ -269,8 +273,7 @@ def lossfun(y, t):
         return y
     
     # max likelihood: has trouble when yhat=0 or 1 so need to scale it
-    smooth = 1e-6
-    yhat = linscale(y, smooth, 1-smooth)
+    yhat = linscale(y, SMOOTH_CONST, 1-SMOOTH_CONST)
     logloss = F.sum(F.where(t.data > 0,
                             -F.log(yhat),
                             -F.log(1-yhat))) / len(t)
@@ -639,11 +642,10 @@ def distribution_normalizer(p, q):
     pnorm = np.abs(p) / np.abs(p).sum()
     qnorm = np.abs(q) / np.abs(q).sum()
     # smooth
-    smooth = 1e-6
     if (pnorm == 0).sum() > 0:
-        pnorm = (np.abs(pnorm)+smooth) / (np.abs(pnorm)+smooth).sum()
+        pnorm = (np.abs(pnorm)+SMOOTH_CONST) / (np.abs(pnorm)+SMOOTH_CONST).sum()
     if (qnorm == 0).sum() > 0:
-        qnorm = (np.abs(qnorm)+smooth) / (np.abs(qnorm)+smooth).sum()
+        qnorm = (np.abs(qnorm)+SMOOTH_CONST) / (np.abs(qnorm)+SMOOTH_CONST).sum()
     return pnorm, qnorm
 
 def kl(p, q): # balanced version
