@@ -31,7 +31,7 @@ def noise2d(index, regs=None, niterations=5000, signoise=0, alpha=0.01, name="de
                niterations=niterations)
 
 def diffTheta(index, niterations=5000, name="default"):
-    name = os.path.join("diff_theta/", naame, str(index))
+    name = os.path.join("diff_theta/", name, str(index))
     os.makedirs(name, exist_ok=True)
     datagen, (theta, risk, nd) = comb_loss.genDiffTheta(n=5000)
     

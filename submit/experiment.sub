@@ -5,4 +5,4 @@ arguments = $(Process)
 output = submit/output/$(Process)
 error = submit/error/$(Process)
 log = submit/experiment.log
-queue 1
+queue 30
