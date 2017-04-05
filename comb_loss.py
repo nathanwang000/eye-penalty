@@ -53,9 +53,9 @@ def normalizer(mu=0, std=1):
         return transform(X)
     return normalize
 
-def gini(c):
-    # calculate the gini coefficient for array c    
-    c = np.sort(c) / np.sum(np.abs(c))
+def abs_gini(c):
+    # calculate the gini coefficient for array np.abs(c)
+    c = np.sort(np.abs(c)) / np.sum(np.abs(c))
     n = c.size
     w = np.array([(n-k+0.5)/n for k in range(1, n+1)])    
     return 1-2*(c*w).sum()
@@ -298,7 +298,7 @@ class Regresser(Chain):
             # theta = F.concat((F.flatten(W), b), 0)
             theta = F.flatten(W) # don't regularize b
             regloss = self.regularizer(theta)
-            sparsity = gini(theta.data)
+            sparsity = abs_gini(theta.data)
 
         acc = calcAcc(y, t)
         auroc = calcAuroc(y, t)
