@@ -1,0 +1,9 @@
+numruns = 30
+universe = vanilla
+initialdir = ..
+executable = paramsearch.sh
+arguments = "$(Process) $(numruns)"
+output = submit/output/$(Process)
+error = submit/error/$(Process)
+log = submit/paramsearch.log
+queue $(numruns)

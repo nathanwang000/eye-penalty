@@ -6,6 +6,7 @@
 submit/output
 submit/error
 submit/experiment.log
+*.log
 
 # nonuseful files
 noise2d/

@@ -4,9 +4,14 @@ import comb_loss
 import plotResult
 from scipy.linalg import block_diag
 
-def experiment(paramsDict, datagen, num_runs=100,
+def experiment(paramAtoms, datagen, num_runs=100,
                basedir_prefix="", niterations=1000,
-               printreport=False, resume=False):
+               printreport=False, resume=False,
+               namebases=None):
+
+    if not namebases or len(namebases) != len(paramAtoms):
+        namebases = [None] * len(paramAtoms)
+    
     def run_with_reg_wrapper(num_runs):
         def _f(*args,**kwargs):
             return comb_loss.run_with_reg(*args, **kwargs,
@@ -26,12 +31,11 @@ def experiment(paramsDict, datagen, num_runs=100,
            'wridge':  comb_loss.weightedRidge, 
            'owl':     comb_loss.OWL, 
            'eye':     comb_loss.eye}
+
     # actual run
-    for method in paramsDict:
-        args = paramsDict[method]
-        ####function(args)#####,directory to save
+    for i, (method, args) in enumerate(paramAtoms):
         outdir = os.path.join(basedir_prefix, "result_" + method)
-        run(r2f[method](*args), outdir)
+        run(r2f[method](*args), outdir, namebase=namebases[i])
 
 
 ############################################### user funtions (all are outdated)

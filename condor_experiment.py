@@ -11,18 +11,19 @@ def noise2d(index, regs=None, niterations=5000, signoise=0, alpha=0.01, name="de
 
     w0 = 1-risk
     w1 = 2-risk # penalize unknown more
-    
-    paramsDict = {
-        'eye':     (risk, alpha),
-        'wlasso':  (w1, alpha),
-        'wridge':  (w1, alpha),
-        'penalty': (risk, alpha, 0.4),
-        'owl':     ([2,1], alpha),
-        'lasso':   (alpha,),
-        'enet':    (alpha, 0.2)
-    }
-    if regs: paramsDict = dict((m, args) for m, args in paramsDict.items() if m in regs)
-    experiment(paramsDict,
+
+    paramAtoms = [
+        ('eye', (risk, alpha)),
+        ('wlasso', (w1, alpha)),
+        ('wridge', (w1, alpha)),
+        ('penalty', (risk, alpha, 0.4)),
+        ('owl', ([2,1], alpha)),
+        ('lasso', (alpha,)),
+        ('enet', (alpha, 0.2))
+    ]
+
+    if regs: paramAtoms = list(filter(lambda a: a[0] in regs, paramAtoms))
+    experiment(paramAtoms,
                datagen=datagen,
                num_runs=1,
                basedir_prefix=name,
@@ -43,16 +44,16 @@ def diffTheta(index, niterations=1000, name="default"):
     w1 = 2-risk
     owl1 = np.zeros(risk.size)
     owl1[0] = 1
-    paramsDict = {
-        'eye':     (risk, 0.01),
-        'wlasso':  (w1, 0.01),
-        'wridge':  (w1, 0.01),
-        'penalty': (risk, 0.01, 0.4),
-        'owl':     (owl1, 0.01),
-        'lasso':   (0.01,),
-        'enet':    (0.01, 0.2)
-    }
-    experiment(paramsDict,
+    paramAtoms = [
+        ('eye', (risk, 0.01)),
+        ('wlasso', (w1, 0.01)),
+        ('wridge', (w1, 0.01)),
+        ('penalty', (risk, 0.01, 0.4)),
+        ('owl', (owl1, 0.01)),
+        ('lasso', (0.01,)),
+        ('enet', (0.01, 0.2))
+    ]
+    experiment(paramAtoms,
                datagen=datagen,
                num_runs=1,
                basedir_prefix=name,
