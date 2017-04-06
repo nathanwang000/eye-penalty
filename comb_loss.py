@@ -19,7 +19,7 @@ from pyemd import emd_with_flow
 from scipy.linalg import block_diag
 
 ############ utility functions ##################
-SMOOTH_CONST = 1e-10
+SMOOTH_CONST = 1e-7
 
 def l1norm(v):
     return F.sum(abs(v))
@@ -65,8 +65,7 @@ def eye(r, alpha=1):
     def f_(theta):
         return alpha * (l1norm((1-r)*theta) +
                         F.sqrt(l1norm((1-r)*theta)**2 +
-                               l2normsq(r*theta) +
-                               SMOOTH_CONST))
+                               l2normsq(r*theta)))
     return f_
 
 def old_eye(r, alpha=1):
@@ -335,7 +334,7 @@ def getModelOptimizer(reg):
 ############ run #############################
 def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
                  printreport=False, resume=True, niterations=1000,
-                 namebase=None):
+                 namebase=None, validate=False):
 
     print(outdir)
     thetas = []
@@ -415,9 +414,7 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
         if trainer.observation.get('main/loss') is not None and\
            trainer.observation.get('main/penalty') is not None and\
            (trainer.observation['main/loss'].data == np.nan or\
-            trainer.observation['main/loss'].data == np.inf or\
-            trainer.observation['main/penalty'].data == np.nan or\
-            trainer.observation['main/penalty'].data == np.inf): continue
+            trainer.observation['main/loss'].data == np.inf): continue
         W = model.predictor.l1.W
         b = model.predictor.l1.b
         theta = F.concat((F.flatten(W), b), 0)
@@ -435,10 +432,11 @@ def run_with_reg(reg, outdir="tmp", num_runs=1, datagen=gendata,
             
         if should_break: break
 
-    thetafn = os.path.join(outdir, "theta.npy")        
-    if resume and os.path.isfile(thetafn):
-        thetas = np.vstack((np.load(thetafn), np.array(thetas)))
-    np.save(thetafn, np.array(thetas))
+    if not validate:
+        thetafn = os.path.join(outdir, "theta.npy")        
+        if resume and os.path.isfile(thetafn):
+            thetas = np.vstack((np.load(thetafn), np.array(thetas)))
+        np.save(thetafn, np.array(thetas))
     
 
 ################# set up for known ###########

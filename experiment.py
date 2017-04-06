@@ -4,12 +4,22 @@ import comb_loss
 import plotResult
 from scipy.linalg import block_diag
 
+# map regularization name to function
+REG2FUNC = {'lasso':   comb_loss.lasso, 
+            'ridge':   comb_loss.ridge, 
+            'enet':    comb_loss.enet, 
+            'penalty': comb_loss.penalty,        
+            'wlasso':  comb_loss.weightedLasso, 
+            'wridge':  comb_loss.weightedRidge, 
+            'owl':     comb_loss.OWL, 
+            'eye':     comb_loss.eye}
+
 def experiment(paramAtoms, datagen, num_runs=100,
                basedir_prefix="", niterations=1000,
                printreport=False, resume=False,
-               namebases=None):
+               namebases=None, validate=False):
 
-    if not namebases or len(namebases) != len(paramAtoms):
+    if not namebases or len(namebases) < len(paramAtoms):
         namebases = [None] * len(paramAtoms)
     
     def run_with_reg_wrapper(num_runs):
@@ -22,20 +32,15 @@ def experiment(paramAtoms, datagen, num_runs=100,
                                           niterations=niterations)
         return _f
     run = run_with_reg_wrapper(num_runs)
-    # map regularization name to function
-    r2f = {'lasso':   comb_loss.lasso, 
-           'ridge':   comb_loss.ridge, 
-           'enet':    comb_loss.enet, 
-           'penalty': comb_loss.penalty,        
-           'wlasso':  comb_loss.weightedLasso, 
-           'wridge':  comb_loss.weightedRidge, 
-           'owl':     comb_loss.OWL, 
-           'eye':     comb_loss.eye}
 
     # actual run
     for i, (method, args) in enumerate(paramAtoms):
-        outdir = os.path.join(basedir_prefix, "result_" + method)
-        run(r2f[method](*args), outdir, namebase=namebases[i])
+        if not validate:
+            outdir = os.path.join(basedir_prefix, "result_" + method)
+            run(REG2FUNC[method](*args), outdir, namebase=namebases[i])            
+        else: # validation just doesn't save theta to avoid race condition
+            outdir = basedir_prefix
+            run(REG2FUNC[method](*args), outdir, namebase=namebases[i], validate=True)
 
 
 ############################################### user funtions (all are outdated)
