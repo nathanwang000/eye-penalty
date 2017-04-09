@@ -200,7 +200,7 @@ def genDiffTheta(n=1000): # bernoulli so noise also on y
             y[i] = np.random.binomial(1,y[i]) # bernoulli
         return X.astype(np.float32), y.astype(np.float32).reshape(y.size,1) 
         
-    return _datagen, (theta, risk, nd)
+    return _datagen, (theta, risk, nd, CovM)
 
 # noise added on X, so really is correlation structure that's changed
 def genPartitionData(n=n, nrgroups=11, nirgroups=11, pergroup=10,\
@@ -665,9 +665,8 @@ def knownRiskFactorReader(r, t, nrgroups, nirgroups, pergroup):
     # assume r is formulated such that nrgroups are first
     # and pergroup are together in r
     # t is theta
-    #print(r.size, t.size, (nrgroups + nirgroups) * pergroup)
     assert r.size == (nrgroups + nirgroups) * pergroup, "size not checked"
-    assert r.size == t.size, "size mismatch"
+    assert r.size == t.size, "size mismatch r:%d, t:%d" % (r.size, t.size)
     ptr_s = 0
     while ptr_s < r.size:
         ptr_e = ptr_s + pergroup

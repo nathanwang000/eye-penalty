@@ -60,7 +60,7 @@ def example():
                basedir_prefix=name)
 
 
-def noise2d(): # torun
+def noise2d(): # done
     name = "noise2d"
     gridSearch = comb_loss.paramsSearch2d
     risk = comb_loss.generate_risk(0, 0, 0, '2d')
@@ -75,22 +75,7 @@ def noise2d(): # torun
                    num_runs=30, datagen=datagen,
                    basedir_prefix="noise2d/%.2f" % s)
 
-def diffTheta(): # running
-    name = "diff_theta"
-    gridSearch = comb_loss.paramsSearchMd
-    datagen, (theta, risk, nd) = comb_loss.genDiffTheta(n=5000)
-    basedir = os.path.join(name, 'val')
-    
-    # pipeline for training
-    gridSearch(datagen=datagen, risk=risk, basedir=basedir)
-    experiment(plotResult.returnBest(criteria='validation/main/auroc',
-                                     minimize=False,
-                                     dirname=basedir),
-               datagen=datagen,
-               num_runs=30,
-               basedir_prefix=name)
-
-def sweepBinaryR(): # torun
+def sweepBinaryR(): # done
     name="binaryR"
     nrgroups = 11
     nirgroups = nrgroups
@@ -116,7 +101,7 @@ def sweepBinaryR(): # torun
                num_runs=30,
                basedir_prefix=name)
 
-def sweepCov(): # torun
+def sweepCov(): # done
     name="corr"
     nrgroups = 10
     nirgroups = 0
@@ -145,7 +130,7 @@ def sweepCov(): # torun
                num_runs=30,
                basedir_prefix=name)
 
-def sweepFracR(): # torun
+def sweepFracR(): # done
     name = "fracR"
     nrgroups = 12
     nirgroups = 0
@@ -169,7 +154,7 @@ def sweepFracR(): # torun
                num_runs=30,
                basedir_prefix=name)
 
-def sweepFracRnormalized(): # running
+def sweepFracRnormalized(): # done
     name = "fracRN"
     nrgroups = 12
     nirgroups = 0
@@ -197,6 +182,21 @@ def sweepFracRnormalized(): # running
                num_runs=30,
                basedir_prefix=name)
     
+def diffTheta(): # done
+    name = "diff_theta"
+    gridSearch = comb_loss.paramsSearchMd
+    datagen, (theta, risk, nd, CovM) = comb_loss.genDiffTheta(n=5000)
+    basedir = os.path.join(name, 'val')
+    
+    # pipeline for training
+    gridSearch(datagen=datagen, risk=risk, basedir=basedir)
+    experiment(plotResult.returnBest(criteria='validation/main/auroc',
+                                     minimize=False,
+                                     dirname=basedir),
+               datagen=datagen,
+               num_runs=30,
+               basedir_prefix=name)
+
 
 if __name__ == '__main__':
     #diffTheta()

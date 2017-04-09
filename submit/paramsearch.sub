@@ -3,7 +3,7 @@ universe = vanilla
 initialdir = ..
 executable = paramsearch.sh
 arguments = "$(Process) $(numruns)"
-output = submit/output/$(Process)
-error = submit/error/$(Process)
+output = submit/output/$(Process).p
+error = submit/error/$(Process).p
 log = submit/paramsearch.log
 queue $(numruns)

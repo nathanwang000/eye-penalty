@@ -140,6 +140,63 @@ def plotPerformance(basedir="./", regs=regs, title=""):
 ################### for nd case #################
 from comb_loss import reportKL, reportTheta
 
+EXPERIMENTS = {
+    #name       #nrgroup   #nirgroups    #pergroup
+    '2d':       (0,        0,            0),
+    'binary_r': (11,       11,           10),
+    'corr':     (10,       0,            4),
+    'frac_r':   ()
+}
+
+def nd_kl_helper(regs=regs, fn='./', stats="mean", method='kl',
+                 experiment="binary_r"):
+    from itertools import zip_longest
+    f = {"mean": lambda x: x.mean(),
+         "var": lambda x: x.var()
+    }[stats]
+
+    lines = []
+    labels = regs
+    tags = []
+    
+    iterables = tuple(reportKL(os.path.join(fn, "result_"+reg),
+                               f=f,
+                               method=method,
+                               nrgroups=EXPERIMENTS[experiment][0],
+                               nirgroups=EXPERIMENTS[experiment][1],
+                               pergroup=EXPERIMENTS[experiment][2],
+                               experiment=experiment)
+                      for reg in regs)
+    prevtag = "relevant"
+    count = 0
+    for items in zip_longest(*iterables):
+        tag = items[0][0]
+        if prevtag != tag:
+            count = 0
+            prevtag = tag
+        tag = tag + str(count)
+        tags.append(tag)
+        
+        lines.append([l for _,l in items])
+        count += 1
+    return np.array(lines), labels, tags
+
+def plot_nd_kl(experiment, regs=regs, fn="./", method='kl'):
+    data, labels, tags = nd_kl_helper(fn=fn, stats="mean",
+                                      experiment=experiment, regs=regs)
+    var_data, _, _ = nd_kl_helper(fn=fn, stats="var",
+                                  experiment=experiment, regs=regs)
+    m, n = data.shape
+    x = np.arange(m)
+    for i in range(n):
+        plt.errorbar(x, data[:,i], yerr=np.sqrt(var_data[:,i]),
+                     fmt='-', color=colors[i])
+        plt.xticks(x, tags, rotation=-45)
+        plt.legend(labels)
+    plt.show()
+    
+##############old start################
+
 def gen_nd_loss_csv(regs=regs, fn=None, stats="mean", method='kl'):
     if not fn: fn="tmp_"+stats+".csv"
     from itertools import zip_longest
@@ -217,4 +274,4 @@ def reportNdLoss(regs=regs,tag=None, method="kl"):
         g = reportKL("result_"+reg, f=lambda x:x.mean(), method=method)
         print(reg+":", sum(list(map(lambda x: x[1],
                                     filter(lambda x: tagf(x[0]), g)))))
-
+##############old end################

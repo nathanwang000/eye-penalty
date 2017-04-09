@@ -1,5 +1,5 @@
 import numpy as np
-import comb_loss, sys, math, os
+import comb_loss, sys, math, os, pickle
 from scipy.linalg import block_diag
 from experiment import experiment
 from itertools import product
@@ -48,7 +48,7 @@ def paramAtomsNd(risk):
 # user functions
 def noise2d(index, numprocess, niterations=5000,
             signoise=0, name="default"):
-    name = os.path.join("noise2dCV", name)
+    name = os.path.join("noise2d", name, "val")
     os.makedirs(name, exist_ok=True)    
     datagen = lambda: comb_loss.gendata(signoise=signoise, n=100)
 
@@ -64,28 +64,8 @@ def noise2d(index, numprocess, niterations=5000,
                niterations=niterations,
                validate=True)
 
-def sweepBinaryR(index, numprocess, niterations=3000, name="default"):
-    name = os.path.join("binaryRiskCV", name)
-    os.makedirs(name, exist_ok=True)    
-
-    nrgroups = 11
-    nirgroups = nrgroups
-    pergroup = 10
-    n = 5000
-    # setup
-    gridSearch = comb_loss.paramsSearchMd
-    risk = comb_loss.generate_risk(nrgroups, nirgroups, pergroup, "binary_r")
-    basedir = os.path.join(name, 'val')
-    # gen data
-    base = np.diag(np.ones(pergroup))       
-    base[base==0] = 0.99
-    C = block_diag(*([base]*(nrgroups+nirgroups)))
-    theta = np.zeros((nrgroups + nirgroups) * pergroup)
-    theta[:nrgroups*pergroup] = 1
-    datagen = lambda: comb_loss.genCovData(C=C, theta=theta,
-                                           n=n, signoise=5)    
-
-    # pipeline for training
+def ndfactory(index, numprocess, name, risk, datagen, niterations):
+    os.makedirs(name, exist_ok=True)
     paramAtoms = paramAtomsNd(risk)    
     mytask = math.ceil(len(paramAtoms) / numprocess)
     experiment(paramAtoms[index*mytask: (index+1)*mytask],
@@ -97,38 +77,131 @@ def sweepBinaryR(index, numprocess, niterations=3000, name="default"):
                resume=True,
                niterations=niterations,
                validate=True)
+    
+    
+def sweepBinaryR(index, numprocess, niterations=3000, name="default"):
+    name = os.path.join("binaryRisk", 'val', name)
 
+    nrgroups = 11
+    nirgroups = nrgroups
+    pergroup = 10
+    n = 5000
+    # setup
+    risk = comb_loss.generate_risk(nrgroups, nirgroups, pergroup, "binary_r")
+    # gen data
+    base = np.diag(np.ones(pergroup))       
+    base[base==0] = 0.99
+    C = block_diag(*([base]*(nrgroups+nirgroups)))
+    theta = np.zeros((nrgroups + nirgroups) * pergroup)
+    theta[:nrgroups*pergroup] = 1
+    datagen = lambda: comb_loss.genCovData(C=C, theta=theta,
+                                           n=n, signoise=15)    
+
+    ndfactory(index, numprocess, name, risk, datagen, niterations)    
+
+def sweepCov(index, numprocess, niterations=3000, name="default"):
+    name = os.path.join("corr", 'val', name)
+
+    nrgroups = 10
+    nirgroups = 0
+    pergroup = 4
+    n = 2000
+    # setup
+    risk = comb_loss.generate_risk(nrgroups, nirgroups, pergroup, "corr")
+    # gen data
+    correlations = [i/nrgroups for i in range(nrgroups)]
+    blocks = []
+    for c in correlations:
+        base = np.diag(np.ones(pergroup))        
+        base[base==0] = c
+        blocks.append(base)
+    C = block_diag(*blocks)
+    theta = np.ones(nrgroups*pergroup)
+    datagen = lambda: comb_loss.genCovData(C=C, theta=theta,
+                                           n=n, signoise=10)
+
+    ndfactory(index, numprocess, name, risk, datagen, niterations)
+
+def sweepFracR(index, numprocess, niterations=3000, name="default"):
+    name = os.path.join("fracR", 'val', name)
+
+    nrgroups = 12
+    nirgroups = 0
+    pergroup = 10
+    n = 2000
+    # setup
+    risk = comb_loss.generate_risk(nrgroups, nirgroups, pergroup, "frac_r")
+    # gen data
+    base = np.diag(np.ones(pergroup))       
+    base[base==0] = 0.99
+    C = block_diag(*([base]*nrgroups))
+    theta = np.ones(nrgroups*pergroup)
+    datagen = lambda: comb_loss.genCovData(C=C, theta=theta,
+                                           n=n, signoise=15)
+
+    ndfactory(index, numprocess, name, risk, datagen, niterations)    
+    
+def sweepFracRN(index, numprocess, niterations=3000, name="default"):
+    name = os.path.join("fracRN", 'val', name)
+
+    nrgroups = 12
+    nirgroups = 0
+    pergroup = 10
+    n = 2000
+    # setup
+    risk = comb_loss.generate_risk(nrgroups, nirgroups, pergroup, "frac_r")
+    # normalize risk to 1
+    for i in range(0, risk.size, pergroup):
+        risk[i:i+pergroup] /= risk[i:i+pergroup].sum()
+    # gen data
+    base = np.diag(np.ones(pergroup))       
+    base[base==0] = 0.99
+    C = block_diag(*([base]*nrgroups))
+    theta = np.ones(nrgroups*pergroup)
+    datagen = lambda: comb_loss.genCovData(C=C, theta=theta,
+                                           n=n, signoise=15)    
+    
+    ndfactory(index, numprocess, name, risk, datagen, niterations)
+
+def diffTheta(index, numprocess, niterations=2000, name="default"):
+    name = os.path.join("diffTheta", 'val', name)
+    os.makedirs(name, exist_ok=True)
+
+    n=5000
+    def _datagen(CovM, theta, n=n):
+        X = comb_loss.genCovX(C=CovM, n=n)
+        y = comb_loss.sigmoid(X.dot(theta))
+        for i in range(n):
+            y[i] = np.random.binomial(1,y[i]) # bernoulli
+        return X.astype(np.float32), y.astype(np.float32).reshape(y.size,1) 
+    
+    if os.path.exists(os.path.join(name, 'CovM.npy')):
+        CovM = np.load(os.path.join(name, "CovM.npy"))        
+        theta = np.load(os.path.join(name, "theta.npy"))
+        risk = np.load(os.path.join(name, "risk.npy"))
+        nd = np.load(os.path.join(name, "nd.npy"))
+        datagen = lambda: _datagen(CovM, theta)
+
+        ndfactory(index, numprocess, name, risk, datagen, niterations)
+    else: # fix a datagen
+        if index == 0:
+            datagen, (theta, risk, nd, CovM) = comb_loss.genDiffTheta(n=n)
+            # need to save theta, risk, nd
+            np.save(os.path.join(name, "CovM.npy"), CovM)            
+            np.save(os.path.join(name, "theta.npy"), theta)
+            np.save(os.path.join(name, "risk.npy"), risk)
+            np.save(os.path.join(name, "nd.npy"), nd)
+        print("generated difftheta data")
+    
 if __name__ == '__main__':
     pid = int(sys.argv[1])
     numprocess = int(sys.argv[2])
 
     # noise2d(pid, numprocess)
-    sweepBinaryR(pid, numprocess)
+    # sweepBinaryR(pid, numprocess)
+    # sweepCov(pid, numprocess)
+    # sweepFracR(pid, numprocess)
+    # sweepFracRN(pid, numprocess)
+    diffTheta(pid, numprocess)
 
-###################################################################### todo
-def diffTheta(index, numprocess,
-              niterations=1500, name="default"):
-    name = os.path.join("diffThetaCV", name)
-    os.makedirs(name, exist_ok=True)    
-
-    # todo fix a datagen
-    datagen, (theta, risk, nd) = comb_loss.genDiffTheta(n=5000)
-    
-    # need to save theta, risk, nd
-    np.save(os.path.join(name, "theta.npy"), theta)
-    np.save(os.path.join(name, "risk.npy"), risk)
-    np.save(os.path.join(name, "nd.npy"), nd)        
-
-
-    mytask = math.ceil(len(paramAtoms) / numprocess)
-    paramAtoms = paramAtomsNd(risk)
-    experiment(paramAtoms[index*mytask: (index+1)*mytask],
-               datagen=datagen,
-               num_runs=1,
-               basedir_prefix=name,
-               namebases=list(range(index*mytask, (index+1)*mytask)),
-               printreport=False, 
-               resume=True,
-               niterations=niterations,
-               validate=True)
 
