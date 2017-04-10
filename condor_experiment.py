@@ -223,9 +223,9 @@ if __name__ == '__main__':
 
     pid = sys.argv[1]
     # noise2d(pid)
-    # sweepBinaryR(pid)
-    # sweepCov(pid) # need to rerun to see if follows what we want
-    # sweepFracR(pid)
+    sweepBinaryR(pid)
+    sweepCov(pid)
+    sweepFracR(pid)
     sweepFracRN(pid)
     # diffTheta(pid)
     

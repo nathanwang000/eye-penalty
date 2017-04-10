@@ -145,7 +145,7 @@ EXPERIMENTS = {
     '2d':       (0,        0,            0),
     'binary_r': (11,       11,           10),
     'corr':     (10,       0,            4),
-    'frac_r':   ()
+    'frac_r':   (12,       0,            10)
 }
 
 def nd_kl_helper(regs=regs, fn='./', stats="mean", method='kl',

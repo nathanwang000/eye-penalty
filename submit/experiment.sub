@@ -2,7 +2,7 @@ universe = vanilla
 initialdir = ..
 executable = experiment.sh
 arguments = $(Process)
-output = submit/output/$(Process).ern
-error = submit/error/$(Process).ern
+output = submit/output/$(Process).e
+error = submit/error/$(Process).e
 log = submit/experiment.log
-queue 30
+queue 60
