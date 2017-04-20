@@ -17,7 +17,7 @@ def extract(record):
         return list(map(lambda e: e[item],record))
     return extractRecord
 
-def plotResult(fn, title=None, save=True, criteria="loss"):
+def plotResult(fn, title=None, save=False, criteria="loss"):
     record = json.load(open(fn))
     
     extractRecord = extract(record)

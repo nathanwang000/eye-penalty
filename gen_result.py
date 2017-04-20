@@ -5,7 +5,8 @@ from plotResult import extract
 
 regs = ['eye','wlasso', 'wridge',
         'lasso', #'ridge',
-        'owl', 'enet', 'penalty']
+        'owl', 'enet'#, 'penalty'
+]
 
 NUM_COLORS = len(regs)
 cm = plt.get_cmap('gist_rainbow')
@@ -193,8 +194,39 @@ def plot_nd_kl(experiment, regs=regs, fn="./", method='kl'):
                      fmt='-', color=colors[i])
         plt.xticks(x, tags, rotation=-45)
         plt.legend(labels)
+    plt.ylabel("symmetric kl")
     plt.show()
     
+from comb_loss import generate_risk
+def fracRfit(experiment, basedir, normalize=False):
+    nrgroups, nirgroups, pergroup = EXPERIMENTS[experiment]
+    t = np.load(os.path.join(basedir, "theta.npy"))[:,:-1] # exclude b
+    r = generate_risk(nrgroups, nirgroups, pergroup, experiment)
+    print(t.shape,t.mean(0).shape, r.shape, nrgroups, nirgroups, pergroup)
+    
+    for start in range(0,r.size,pergroup):
+        plt.subplot(5, 5, start//pergroup + 1)
+        plt.plot(r[start:start+pergroup], '-o', label="risk")
+        plt.plot(t.mean(0)[start:start+pergroup], '-o',label="\theta")
+        plt.axis("off")
+    plt.legend(bbox_to_anchor=(1.05, 1))
+    plt.show()
+        
+    if normalize:
+        normed_t = t.mean(0)
+        for start in range(0,r.size,pergroup):
+            normed_t[start:start+pergroup] -= np.min(normed_t[start:start+pergroup])
+            normed_t[start:start+pergroup] /= np.max(normed_t[start:start+pergroup])
+            
+            # frac r
+            for start in range(0,r.size,pergroup):
+                plt.subplot(5, 5, start//pergroup + 1)
+                l1 = plt.plot(r[start:start+pergroup], "-o", label="risk")
+                l2 = plt.plot(normed_t[start:start+pergroup], "-o", label="\theta")
+                plt.axis("off")
+            plt.legend(bbox_to_anchor=(1.05, 1))
+            plt.show()
+
 ##############old start################
 
 def gen_nd_loss_csv(regs=regs, fn=None, stats="mean", method='kl'):

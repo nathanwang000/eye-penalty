@@ -1,8 +1,9 @@
+numruns = 60
 universe = vanilla
 initialdir = ..
 executable = experiment.sh
-arguments = $(Process)
+arguments = "$(Process) $(numruns)"
 output = submit/output/$(Process).e
 error = submit/error/$(Process).e
 log = submit/experiment.log
-queue 60
+queue $(numruns)

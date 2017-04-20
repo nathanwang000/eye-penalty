@@ -99,12 +99,12 @@ def sweepBinaryR(index, numprocess, niterations=3000, name="default"):
 
     ndfactory(index, numprocess, name, risk, datagen, niterations)    
 
-def sweepCov(index, numprocess, niterations=3000, name="default"):
+def sweepCov(index, numprocess, niterations=1000, name="more"):
     name = os.path.join("corr", 'val', name)
 
     nrgroups = 10
     nirgroups = 0
-    pergroup = 4
+    pergroup = 10 # was 4 for default
     n = 2000
     # setup
     risk = comb_loss.generate_risk(nrgroups, nirgroups, pergroup, "corr")
@@ -118,7 +118,7 @@ def sweepCov(index, numprocess, niterations=3000, name="default"):
     C = block_diag(*blocks)
     theta = np.ones(nrgroups*pergroup)
     datagen = lambda: comb_loss.genCovData(C=C, theta=theta,
-                                           n=n, signoise=10)
+                                           n=n, signoise=5)
 
     ndfactory(index, numprocess, name, risk, datagen, niterations)
 
@@ -193,6 +193,47 @@ def diffTheta(index, numprocess, niterations=2000, name="default"):
             np.save(os.path.join(name, "nd.npy"), nd)
         print("generated difftheta data")
     
+def logExp(index, numprocess, niterations=2000, name="logExp"):
+    name = os.path.join("fracR", 'val', name)
+
+    nd = 100
+    n = 2000
+    
+    x = np.linspace(0,1,nd)
+    xs = [0, 0.4, 0.6, 1]
+    ys = [0, 0.5, 0.5, 1]
+    a,b,c,d = np.polyfit(xs, ys, 3)
+
+    risk = a*x**3 + b*x**2 + c*x +d
+    C = np.diag(np.ones(nd))
+    C[C==0] = 0.99
+    theta = np.ones(nd)
+    
+    datagen = lambda: comb_loss.genCovData(C=C, theta=theta,
+                                           n=n, signoise=15)
+
+    ndfactory(index, numprocess, name, risk, datagen, niterations)
+
+def logFracR(index, numprocess, niterations=2000, name="logFracR"):
+    name = os.path.join("fracR", 'val', name)
+
+    nd = 100
+    n = 2000
+
+    nd = 100
+    n = 2000
+    
+    x = np.linspace(0,1,nd)
+    risk = np.log(30*x+1)
+    C = np.diag(np.ones(nd))
+    C[C==0] = 0.99
+    theta = np.ones(nd)
+    
+    datagen = lambda: comb_loss.genCovData(C=C, theta=theta,
+                                           n=n, signoise=15)
+
+    ndfactory(index, numprocess, name, risk, datagen, niterations)
+    
 if __name__ == '__main__':
     pid = int(sys.argv[1])
     numprocess = int(sys.argv[2])
@@ -202,6 +243,6 @@ if __name__ == '__main__':
     # sweepCov(pid, numprocess)
     # sweepFracR(pid, numprocess)
     # sweepFracRN(pid, numprocess)
-    diffTheta(pid, numprocess)
-
-
+    # diffTheta(pid, numprocess)
+    # logExp(pid, numprocess)
+    logFracR(pid, numprocess)

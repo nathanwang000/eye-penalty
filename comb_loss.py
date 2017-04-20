@@ -167,7 +167,7 @@ def genCovData(C=None, theta=None, n=n, dim=d, signoise=5): # signoise on y
     y = (X.dot(theta) + noise > 0).reshape(n,1)
     return X.astype(np.float32), y.astype(np.float32).reshape(y.size,1) 
 
-def genDiffTheta(n=1000): # bernoulli so noise also on y
+def genDiffTheta(n=1000, binary=True): # bernoulli so noise also on y
     import numpy as np
     import matplotlib.pyplot as plt
     from scipy.linalg import block_diag
@@ -175,9 +175,12 @@ def genDiffTheta(n=1000): # bernoulli so noise also on y
     w = np.random.normal(0,1,ng)
     nd = np.random.poisson(20,ng)
     d = nd.sum() # feature dimension
-    risk = np.random.uniform(0,1,d)
+    if binary:
+        risk = np.random.randint(0,2,d)
+    else:
+        risk = np.random.uniform(0,1,d)
     # linearly distribute w_i to theta_i according to risk_i
-    theta = risk.copy()
+    theta = risk.copy().astype(np.float32)
     istart = 0
     for ndi in nd:
         iend = istart+ndi
@@ -632,9 +635,9 @@ def generate_risk(nrgroups, nirgroups, pergroup, experiment):
 def distribution_normalizer(p, q):
     # normalize p and q to abs, p,q are np array
     if np.abs(p).sum() == 0:
-        pnorm = np.ones_like(p) / p.size
+        p = np.ones_like(p) / p.size
     if np.abs(q).sum() == 0:
-        qnorm = np.ones_like(p) / q.size
+        q = np.ones_like(q) / q.size
     pnorm = np.abs(p) / np.abs(p).sum()
     qnorm = np.abs(q) / np.abs(q).sum()
     # smooth

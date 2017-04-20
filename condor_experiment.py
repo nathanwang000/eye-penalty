@@ -2,6 +2,8 @@ from experiment import experiment, REG2FUNC
 import numpy as np
 import comb_loss, sys, os, condor_paramSearch
 from scipy.linalg import block_diag
+from itertools import product
+import math
 
 ############# helper functions
 from chainer import serializers, functions
@@ -148,12 +150,12 @@ def sweepBinaryR(index, niterations=3000, name="default"):
 
     ndfactory(index, taskname, name, datagen, risk, niterations)
 
-def sweepCov(index, niterations=500, name="default"):
+def sweepCov(index, niterations=1000, name="more"):
     taskname = "corr"
 
     nrgroups = 10
     nirgroups = 0
-    pergroup = 4
+    pergroup = 10 # was 4 for default
     n = 2000
     # setup
     risk = comb_loss.generate_risk(nrgroups, nirgroups, pergroup, "corr")
@@ -167,7 +169,7 @@ def sweepCov(index, niterations=500, name="default"):
     C = block_diag(*blocks)
     theta = np.ones(nrgroups*pergroup)
     datagen = lambda: comb_loss.genCovData(C=C, theta=theta,
-                                           n=n, signoise=10)
+                                           n=n, signoise=5)
 
     ndfactory(index, taskname, name, datagen, risk, niterations)
 
@@ -189,7 +191,74 @@ def sweepFracR(index, niterations=3000, name="default"):
                                            n=n, signoise=15)
 
     ndfactory(index, taskname, name, datagen, risk, niterations)
+
+##### special experiments ###########################################
+def diffTheta(index, niterations=1000, name="default", binary=True):
+    taskname = "diffTheta"
     
+    name = os.path.join(taskname, name)
+    valdir = os.path.join(name, 'val')
+    name = os.path.join(name, str(index))    
+    
+    os.makedirs(name, exist_ok=True)
+    datagen, (theta, risk, nd, CovM) = comb_loss.genDiffTheta(n=5000, binary=binary)
+    
+    # need to save theta, risk, nd
+    np.save(os.path.join(name, "theta.npy"), theta)
+    np.save(os.path.join(name, "risk.npy"), risk)
+    np.save(os.path.join(name, "nd.npy"), nd)        
+
+    w1 = 2-risk
+    owl1 = np.zeros(risk.size)
+    owl1[0] = 1
+    paramAtoms = [
+        ('eye', (risk, 0.01)),
+        ('wlasso', (w1, 0.01)),
+        ('wridge', (w1, 0.01)),
+        # ('penalty', (risk, 0.01, 0.4)),
+        ('owl', (owl1, 0.01)),
+        ('lasso', (0.01,)),
+        ('enet', (0.01, 0.2))
+    ]
+    experiment(paramAtoms,
+               datagen=datagen,
+               num_runs=1,
+               basedir_prefix=name,
+               printreport=False,
+               resume=True,
+               niterations=niterations)
+
+def InferiorPenalty(index, numprocess, niterations=5000, name="default"):
+    taskname = "inferiorPenalty"
+
+    name = os.path.join(taskname, name)
+    name = os.path.join(name, str(index))    
+
+    index = index-1 # because condor_experiment is 1 indexed
+    os.makedirs(name, exist_ok=True)
+    datagen = lambda: comb_loss.gendata(signoise=0, n=100)
+    
+    risk  = comb_loss.generate_risk(0, 0, 0, '2d')
+    alpha = [1e-1, 5e-2, 1e-2, 5e-3, 1e-3, 5e-4, 1e-4, 5e-5, 1e-5, 5e-6, 1e-6]
+    beta  = np.linspace(0,1,11)
+
+    params_cand = [
+        ('penalty', ((risk,), alpha, beta)),
+        ('eye',     ((risk,), alpha))
+    ]
+
+    paramAtoms = [(m, arg) for m, args in params_cand for arg in product(*args)]
+    mytask = math.ceil(len(paramAtoms) / numprocess)
+    experiment(paramAtoms[index*mytask: (index+1)*mytask],
+               datagen=datagen,
+               num_runs=1,
+               basedir_prefix=name,
+               namebases=list(range(index*mytask, (index+1)*mytask)),               
+               printreport=False,
+               resume=True,
+               niterations=niterations)
+    
+######################### derived experiments ##############################
 def sweepFracRN(index, niterations=3000, name="default"):
     taskname = "fracRN"
 
@@ -212,22 +281,67 @@ def sweepFracRN(index, niterations=3000, name="default"):
 
     ndfactory(index, taskname, name, datagen, risk, niterations)    
 
+
+def logExp(index, niterations=2000, name="logExp"): # fracR variant
+    taskname = "fracR"
+
+    nd = 100
+    n = 2000
+    
+    x = np.linspace(0,1,nd)
+    xs = [0, 0.4, 0.6, 1]
+    ys = [0, 0.5, 0.5, 1]
+    a,b,c,d = np.polyfit(xs, ys, 3)
+
+    risk = a*x**3 + b*x**2 + c*x +d
+    C = np.diag(np.ones(nd))
+    C[C==0] = 0.99
+    theta = np.ones(nd)
+    
+    datagen = lambda: comb_loss.genCovData(C=C, theta=theta,
+                                           n=n, signoise=15)
+
+    ndfactory(index, taskname, name, datagen, risk, niterations)
+
+def logFracR(index, niterations=2000, name="logFracR"): # fracR variant
+    taskname = "fracR"
+
+    nd = 100
+    n = 2000
+    
+    x = np.linspace(0,1,nd)
+    risk = np.log(30*x+1)
+    risk /= risk.max()
+    C = np.diag(np.ones(nd))
+    C[C==0] = 0.99
+    theta = np.ones(nd)
+    
+    datagen = lambda: comb_loss.genCovData(C=C, theta=theta,
+                                           n=n, signoise=15)
+
+    ndfactory(index, taskname, name, datagen, risk, niterations)
+    
+
 if __name__ == '__main__':
+    pid = int(sys.argv[1])
+    numprocess = int(sys.argv[2])
+    
     # sweep noise level
     # for s in np.linspace(0,2,10):
     #     noise2d(sys.argv[1], signoise=s, name="noise%.2f" % s)
 
     # noise2d(sys.argv[1], alpha=1e-3, niterations=15000, name="alpha0.001")
     # noise2d(sys.argv[1], alpha=1e-4, niterations=30000, name="alpha0.0001")    
-    # diffTheta(sys.argv[1])
 
-    pid = sys.argv[1]
     # noise2d(pid)
-    sweepBinaryR(pid)
-    sweepCov(pid)
-    sweepFracR(pid)
-    sweepFracRN(pid)
+    # sweepBinaryR(pid)
+    # sweepCov(pid)
+    # sweepFracR(pid)
+    # sweepFracRN(pid)
     # diffTheta(pid)
+    # logExp(pid)
+    # logFracR(pid)
+    InferiorPenalty(pid, numprocess)
     
 ############################deprecated##############################
 # def noise2d_old(index, regs=None, niterations=5000,
@@ -262,34 +376,4 @@ if __name__ == '__main__':
 #                resume=True,
 #                niterations=niterations)
 
-# def diffTheta(index, niterations=1000, name="default"):
-#     name = os.path.join("diffTheta", name)
-#     valdir = os.path.join(name, 'val')
-#     name = os.path.join(name, str(index))    
-    
-#     os.makedirs(name, exist_ok=True)
-#     datagen, (theta, risk, nd, CovM) = comb_loss.genDiffTheta(n=5000)
-    
-#     # need to save theta, risk, nd
-#     np.save(os.path.join(name, "theta.npy"), theta)
-#     np.save(os.path.join(name, "risk.npy"), risk)
-#     np.save(os.path.join(name, "nd.npy"), nd)        
-
-#     w1 = 2-risk
-#     owl1 = np.zeros(risk.size)
-#     owl1[0] = 1
-#     paramAtoms = [
-#         ('eye', (risk, 0.01)),
-#         ('wlasso', (w1, 0.01)),
-#         ('wridge', (w1, 0.01)),
-#         ('penalty', (risk, 0.01, 0.4)),
-#         ('owl', (owl1, 0.01)),
-#         ('lasso', (0.01,)),
-#         ('enet', (0.01, 0.2))
-#     ]
-#     experiment(paramAtoms,
-#                datagen=datagen,
-#                num_runs=1,
-#                basedir_prefix=name,
-#                niterations=niterations)
 
