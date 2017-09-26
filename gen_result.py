@@ -119,7 +119,16 @@ def plotPerformance(basedir="./", regs=regs, title=""):
     bar_width = 1.0 / (len(regs)+1)
     opacity = 0.4
     error_config = {'ecolor': '0.3'}
-    # fill in rects
+    # output real value
+    format_title = "method\t" + ("%s\t" * len(criteria))
+    print(format_title % tuple(criteria))
+    for i, reg in enumerate(regs):
+        format_str = "%s\t" + ("%.4f+-%.4f\t" * len(criteria))
+        lol = [(means[i][j], stds[i][j]) for j in range(len(criteria))]
+        content = [reg] + [item for sublist in lol for item in sublist]
+        print(format_str % tuple(content))
+    
+    # fill in rects    
     for i, reg in enumerate(regs):
         bar = plt.bar(index + i * bar_width,
                       means[i], bar_width,
@@ -138,15 +147,18 @@ def plotPerformance(basedir="./", regs=regs, title=""):
     plt.show()
     plt.clf()
 
+
 ################### for nd case #################
 from comb_loss import reportKL, reportTheta
 
 EXPERIMENTS = {
-    #name       #nrgroup   #nirgroups    #pergroup
-    '2d':       (0,        0,            0),
-    'binary_r': (11,       11,           10),
-    'corr':     (10,       0,            4),
-    'frac_r':   (12,       0,            10)
+    #name        #nrgroup   #nirgroups    #pergroup
+    '2d':        (0,        0,            0),
+    'binary_r':  (11,       11,           10),
+    'corr':      (10,       0,            4),
+    'frac_r':    (12,       0,            10),
+    'corr_more': (10,       0,            10),
+    'corr_huge': (10,       0,            30)
 }
 
 def nd_kl_helper(regs=regs, fn='./', stats="mean", method='kl',
@@ -182,19 +194,38 @@ def nd_kl_helper(regs=regs, fn='./', stats="mean", method='kl',
         count += 1
     return np.array(lines), labels, tags
 
-def plot_nd_kl(experiment, regs=regs, fn="./", method='kl'):
+def plot_nd_kl(experiment, regs=regs, fn="./", method='kl',
+               name=None, xtickLabels=None, xlabel=None, upto=None):
     data, labels, tags = nd_kl_helper(fn=fn, stats="mean",
                                       experiment=experiment, regs=regs)
     var_data, _, _ = nd_kl_helper(fn=fn, stats="var",
                                   experiment=experiment, regs=regs)
+
+    if upto:
+        data = data[:upto]
+        var_data = var_data[:upto]
+        
     m, n = data.shape
     x = np.arange(m)
+
+       
+    linestyles = ["-o", ":v", "-*", "-s",  "--^", "-.D", "-1", "-+"]
+    fig, ax = plt.subplots()
+    import seaborn as sns
+    
     for i in range(n):
-        plt.errorbar(x, data[:,i], yerr=np.sqrt(var_data[:,i]),
-                     fmt='-', color=colors[i])
-        plt.xticks(x, tags, rotation=-45)
-        plt.legend(labels)
-    plt.ylabel("symmetric kl")
+        plt.errorbar(x, data[:,i], #yerr=np.sqrt(var_data[:,i]),
+                     fmt=linestyles[i], markersize=12, lw=4)#, color=colors[i])
+        if xtickLabels:
+            plt.xticks(x, xtickLabels, rotation=-45, fontsize=20)
+        plt.legend(labels, fontsize=15)
+    plt.ylabel("symmetric kl", fontsize=25)
+    if xlabel: plt.xlabel(xlabel, fontsize=25)
+
+    sns.set_style("whitegrid", {'axes.grid' : False})
+    sns.despine(ax=ax, offset=0) 
+    
+    if name: plt.savefig("figures/%s.eps" % name, bbox_inches="tight")
     plt.show()
     
 from comb_loss import generate_risk

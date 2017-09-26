@@ -150,13 +150,13 @@ def sweepBinaryR(index, niterations=3000, name="default"):
 
     ndfactory(index, taskname, name, datagen, risk, niterations)
 
-def sweepCov(index, niterations=1000, name="more"):
+def sweepCov(index, niterations=1000, name="huge"):
     taskname = "corr"
 
     nrgroups = 10
     nirgroups = 0
-    pergroup = 10 # was 4 for default
-    n = 2000
+    pergroup = 30 # was 4 for default, 10 for more, 30 for huge
+    n = 5000
     # setup
     risk = comb_loss.generate_risk(nrgroups, nirgroups, pergroup, "corr")
     # gen data
@@ -228,7 +228,7 @@ def diffTheta(index, niterations=1000, name="default", binary=True):
                resume=True,
                niterations=niterations)
 
-def InferiorPenalty(index, numprocess, niterations=5000, name="default"):
+def InferiorPenalty(index, numprocess, niterations=10000, name="default"):
     taskname = "inferiorPenalty"
 
     name = os.path.join(taskname, name)
@@ -239,6 +239,39 @@ def InferiorPenalty(index, numprocess, niterations=5000, name="default"):
     datagen = lambda: comb_loss.gendata(signoise=0, n=100)
     
     risk  = comb_loss.generate_risk(0, 0, 0, '2d')
+    alpha = [1e-1, 5e-2, 1e-2, 5e-3, 1e-3, 5e-4, 1e-4, 5e-5, 1e-5, 5e-6, 1e-6]
+    #alpha = [5e-7, 1e-7, 5e-8, 1e-8, 5e-9, 1e-9, 1e-9, 5e-10, 1e-10, 5e-11, 1e-11, 5e-12, 1e-12]
+    beta  = np.linspace(0,1,11)
+
+    params_cand = [
+        ('penalty', ((risk,), alpha, beta)),
+        ('eye',     ((risk,), alpha))
+    ]
+
+    paramAtoms = [(m, arg) for m, args in params_cand for arg in product(*args)]
+    mytask = math.ceil(len(paramAtoms) / numprocess)
+    experiment(paramAtoms[index*mytask: (index+1)*mytask],
+               datagen=datagen,
+               num_runs=1,
+               basedir_prefix=name,
+               namebases=list(range(index*mytask, (index+1)*mytask)),               
+               printreport=False,
+               resume=True,
+               niterations=niterations)
+
+def unknownRelevant(index, numprocess, niterations=10000, name="unknownRelevant"):
+    taskname = "inferiorPenalty"
+
+    name = os.path.join(taskname, name)
+    name = os.path.join(name, str(index))    
+
+    index = index-1 # because condor_experiment is 1 indexed
+    os.makedirs(name, exist_ok=True)
+
+    risk  = np.array([1,0])
+    theta = np.array([1,5])
+    datagen = lambda: comb_loss.genCovData(C=np.eye(2), theta=theta, signoise=1, n=300)
+    
     alpha = [1e-1, 5e-2, 1e-2, 5e-3, 1e-3, 5e-4, 1e-4, 5e-5, 1e-5, 5e-6, 1e-6]
     beta  = np.linspace(0,1,11)
 
@@ -257,7 +290,7 @@ def InferiorPenalty(index, numprocess, niterations=5000, name="default"):
                printreport=False,
                resume=True,
                niterations=niterations)
-    
+
 ######################### derived experiments ##############################
 def sweepFracRN(index, niterations=3000, name="default"):
     taskname = "fracRN"
@@ -341,39 +374,6 @@ if __name__ == '__main__':
     # diffTheta(pid)
     # logExp(pid)
     # logFracR(pid)
-    InferiorPenalty(pid, numprocess)
+    # InferiorPenalty(pid, numprocess) 
+    unknownRelevant(pid, numprocess) 
     
-############################deprecated##############################
-# def noise2d_old(index, regs=None, niterations=5000,
-#                 signoise=0, alpha=0.01, name="default"):
-#     name = os.path.join("noise2d", name)
-#     valdir = os.path.join(name, 'val')
-#     name = os.path.join(name, str(index))    
-    
-#     os.makedirs(name, exist_ok=True)    
-#     datagen = lambda: comb_loss.gendata(signoise=signoise, n=100)
-#     risk = comb_loss.generate_risk(0, 0, 0, '2d')
-
-#     w0 = 1-risk
-#     w1 = 2-risk # penalize unknown more
-
-#     paramAtoms = [
-#         ('eye', (risk, alpha)),
-#         ('wlasso', (w1, alpha)),
-#         ('wridge', (w1, alpha)),
-#         ('penalty', (risk, alpha, 0.4)),
-#         ('owl', ([2,1], alpha)),
-#         ('lasso', (alpha,)),
-#         ('enet', (alpha, 0.2))
-#     ]
-
-#     if regs: paramAtoms = list(filter(lambda a: a[0] in regs, paramAtoms))
-#     experiment(paramAtoms,
-#                datagen=datagen,
-#                num_runs=1,
-#                basedir_prefix=name,
-#                printreport=False, 
-#                resume=True,
-#                niterations=niterations)
-
-

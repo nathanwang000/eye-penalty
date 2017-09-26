@@ -167,7 +167,7 @@ def genCovData(C=None, theta=None, n=n, dim=d, signoise=5): # signoise on y
     y = (X.dot(theta) + noise > 0).reshape(n,1)
     return X.astype(np.float32), y.astype(np.float32).reshape(y.size,1) 
 
-def genDiffTheta(n=1000, binary=True): # bernoulli so noise also on y
+def genDiffTheta(n=5000, binary=True): # bernoulli so noise also on y
     import numpy as np
     import matplotlib.pyplot as plt
     from scipy.linalg import block_diag
@@ -591,7 +591,7 @@ def generate_risk(nrgroups, nirgroups, pergroup, experiment):
         for i in range(0, nrvars//pergroup):
             r[(i*pergroup):(i*pergroup+i)] = 1
         r = np.concatenate((r,r))
-    elif experiment == "corr":
+    elif experiment.startswith('corr'):
         rbase = np.zeros(pergroup)
         rbase[:pergroup//2] = 1
         r = np.concatenate([rbase for _ in range(nrgroups)])

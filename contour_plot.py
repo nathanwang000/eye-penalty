@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-a = -4
-b = 4
+a = -10
+b = 10
 xlist = np.linspace(a, b, 100)
 ylist = np.linspace(a, b, 100)
 X, Y = np.meshgrid(xlist, ylist)
@@ -20,12 +20,12 @@ def drawContour(Z, name, levels=None,
         else:
             cp = plt.contour(X, Y, Z)
     if useLabel: plt.clabel(cp, inline=True, fontsize=10)
-    plt.title(name + ' Contour Plot')
-    plt.xlabel('$x_0$')
-    plt.ylabel('$x_1$')
+    plt.title(name + ' Contour Plot', fontsize=15)
+    plt.xlabel(r'$\theta_{known}$', fontsize=15)
+    plt.ylabel(r'$\theta_{unknown}$', fontsize=15)
     if save:
-        plt.savefig('contour/'+name+'.png')
-    else: plt.show()
+        plt.savefig('contour/'+name+'.eps', bbox="tight")
+    plt.show()
 
 alpha = 1
 l1_ratio = 0.5

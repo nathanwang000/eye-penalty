@@ -99,13 +99,13 @@ def sweepBinaryR(index, numprocess, niterations=3000, name="default"):
 
     ndfactory(index, numprocess, name, risk, datagen, niterations)    
 
-def sweepCov(index, numprocess, niterations=1000, name="more"):
+def sweepCov(index, numprocess, niterations=1000, name="huge"):
     name = os.path.join("corr", 'val', name)
 
     nrgroups = 10
     nirgroups = 0
-    pergroup = 10 # was 4 for default
-    n = 2000
+    pergroup = 30 # was 4 for default, 10 for more, 30 for huge
+    n = 5000
     # setup
     risk = comb_loss.generate_risk(nrgroups, nirgroups, pergroup, "corr")
     # gen data
@@ -240,9 +240,9 @@ if __name__ == '__main__':
 
     # noise2d(pid, numprocess)
     # sweepBinaryR(pid, numprocess)
-    # sweepCov(pid, numprocess)
+    sweepCov(pid, numprocess)
     # sweepFracR(pid, numprocess)
     # sweepFracRN(pid, numprocess)
     # diffTheta(pid, numprocess)
     # logExp(pid, numprocess)
-    logFracR(pid, numprocess)
+    # logFracR(pid, numprocess)
